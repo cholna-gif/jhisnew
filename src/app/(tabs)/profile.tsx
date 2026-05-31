@@ -16,6 +16,7 @@ import type { SFSymbol } from 'sf-symbols-typescript';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { formatUsd } from '@/lib/currency';
+import SupportTicketModal from '@/components/SupportTicketModal';
 
 function SectionHeader({ symbol, title }: { symbol: SFSymbol; title: string }) {
   return (
@@ -37,6 +38,7 @@ export default function ProfileScreen() {
   const [showTopUp, setShowTopUp] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const [rideCount, setRideCount] = useState(0);
+  const [showTicket, setShowTicket] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -218,8 +220,8 @@ export default function ProfileScreen() {
         {/* Support */}
         <View style={styles.section}>
           <SectionHeader symbol="questionmark.circle" title="Support" />
-          <TouchableOpacity style={styles.supportRow} onPress={() => Alert.alert('Support', 'Email: support@jih.app\nTelegram: @jihsupport')}>
-            <Text style={styles.supportText}>Contact Support</Text>
+          <TouchableOpacity style={styles.supportRow} onPress={() => setShowTicket(true)}>
+            <Text style={styles.supportText}>Send Support Ticket</Text>
             <Text style={styles.supportArrow}>→</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.supportRow} onPress={() => Alert.alert('About', 'Jih Passenger App v1.0\nBuilt for Cambodia.')}>
@@ -233,6 +235,13 @@ export default function ProfileScreen() {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <SupportTicketModal
+        visible={showTicket}
+        onClose={() => setShowTicket(false)}
+        userId={user?.id ?? ''}
+        userEmail={user?.email}
+      />
     </SafeAreaView>
   );
 }

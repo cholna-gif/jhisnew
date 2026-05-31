@@ -10,7 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   Pressable,
-  FlatList,
+  ScrollView,
   StyleSheet,
   ActivityIndicator,
   Dimensions,
@@ -222,14 +222,10 @@ export default function LocationSearch({
             </View>
           )}
 
-          <FlatList
-            data={suggestions}
-            keyExtractor={item => item.id}
-            keyboardShouldPersistTaps="always"
-            scrollEnabled={suggestions.length > 4}
-            style={{ maxHeight: 300 }}
-            renderItem={({ item, index }) => (
+          <ScrollView style={{ maxHeight: 300 }} keyboardShouldPersistTaps="always">
+            {suggestions.map((item, index) => (
               <TouchableOpacity
+                key={item.id}
                 style={[styles.suggRow, index === suggestions.length - 1 && { borderBottomWidth: 0 }]}
                 onPress={() => handleSelect(item)}
                 activeOpacity={0.7}
@@ -247,8 +243,8 @@ export default function LocationSearch({
                   <Text style={styles.suggSub}  numberOfLines={1}>{item.sub}</Text>
                 </View>
               </TouchableOpacity>
-            )}
-          />
+            ))}
+          </ScrollView>
         </View>
       )}
     </View>
