@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,20 @@ import {
   Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SymbolView } from 'expo-symbols';
+import type { SFSymbol } from 'sf-symbols-typescript';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { formatUsd } from '@/lib/currency';
+
+function SectionHeader({ symbol, title }: { symbol: SFSymbol; title: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+      <SymbolView name={symbol} style={{ width: 15, height: 15 }} tintColor="#374151" resizeMode="scaleAspectFit" />
+      <Text style={{ fontSize: 14, fontWeight: '700', color: '#374151' }}>{title}</Text>
+    </View>
+  );
+}
 
 export default function ProfileScreen() {
   const { user, profile, signOut, refreshProfile } = useAuth();
@@ -87,7 +98,7 @@ export default function ProfileScreen() {
           <Text style={styles.emailText}>{user?.email}</Text>
           {profile?.is_suspended && (
             <View style={styles.suspendedBadge}>
-              <Text style={styles.suspendedBadgeText}>⚠️ Account Suspended</Text>
+              <Text style={styles.suspendedBadgeText}>Account Suspended</Text>
             </View>
           )}
         </View>
@@ -103,14 +114,14 @@ export default function ProfileScreen() {
             <Text style={styles.statLbl}>Wallet Balance</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNum}>🛺</Text>
+            <SymbolView name="car.2.fill" style={{ width: 22, height: 22 }} tintColor="#1A2744" resizeMode="scaleAspectFit" />
             <Text style={styles.statLbl}>Passenger</Text>
           </View>
         </View>
 
         {/* Wallet */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>💰 Wallet</Text>
+          <SectionHeader symbol="wallet.pass.fill" title="Wallet" />
           <View style={styles.walletRow}>
             <Text style={styles.walletBalance}>{formatUsd(walletBalance)}</Text>
             <TouchableOpacity
@@ -143,7 +154,7 @@ export default function ProfileScreen() {
 
         {/* Edit profile */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>👤 Edit Profile</Text>
+          <SectionHeader symbol="person.crop.circle" title="Edit Profile" />
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Full Name</Text>
             <TextInput
@@ -177,7 +188,7 @@ export default function ProfileScreen() {
 
         {/* Settings */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>⚙️ Settings</Text>
+          <SectionHeader symbol="gearshape" title="Settings" />
           <View style={styles.settingRow}>
             <Text style={styles.settingLabel}>Push Notifications</Text>
             <Switch
@@ -191,7 +202,7 @@ export default function ProfileScreen() {
 
         {/* Account info */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ℹ️ Account</Text>
+          <SectionHeader symbol="info.circle" title="Account" />
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Email</Text>
             <Text style={styles.infoValue}>{user?.email}</Text>
@@ -206,7 +217,7 @@ export default function ProfileScreen() {
 
         {/* Support */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🆘 Support</Text>
+          <SectionHeader symbol="questionmark.circle" title="Support" />
           <TouchableOpacity style={styles.supportRow} onPress={() => Alert.alert('Support', 'Email: support@jih.app\nTelegram: @jihsupport')}>
             <Text style={styles.supportText}>Contact Support</Text>
             <Text style={styles.supportArrow}>→</Text>

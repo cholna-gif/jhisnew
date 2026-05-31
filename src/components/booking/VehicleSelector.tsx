@@ -1,10 +1,10 @@
-import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
-import { Colors } from '@/constants/theme';
+import { SymbolView } from 'expo-symbols';
+import type { SFSymbol } from 'sf-symbols-typescript';
 
 export interface VehicleOption {
   type: string;
-  icon: string;
+  sfSymbol: SFSymbol;
   label: string;
   description: string;
   baseFare: number;
@@ -13,10 +13,10 @@ export interface VehicleOption {
 }
 
 export const VEHICLE_OPTIONS: VehicleOption[] = [
-  { type: 'tuktuk', icon: '🛺', label: 'Tuk Tuk', description: 'Classic Cambodia ride', baseFare: 1.0, perKm: 0.4, maxSeats: 4 },
-  { type: 'car', icon: '🚗', label: 'Car', description: 'Comfortable & AC', baseFare: 1.5, perKm: 0.6, maxSeats: 5 },
-  { type: 'moto', icon: '🏍️', label: 'Moto', description: 'Fast & affordable', baseFare: 0.75, perKm: 0.3, maxSeats: 1 },
-  { type: 'van', icon: '🚐', label: 'Van', description: 'Groups up to 8', baseFare: 2.0, perKm: 0.8, maxSeats: 8 },
+  { type: 'tuktuk', sfSymbol: 'car.2.fill',    label: 'Tuk Tuk', description: 'Classic Cambodia ride', baseFare: 1.0, perKm: 0.4, maxSeats: 4 },
+  { type: 'car',    sfSymbol: 'car.fill',       label: 'Car',     description: 'Comfortable & AC',     baseFare: 1.5, perKm: 0.6, maxSeats: 5 },
+  { type: 'moto',   sfSymbol: 'motorcycle',     label: 'Moto',    description: 'Fast & affordable',    baseFare: 0.75, perKm: 0.3, maxSeats: 1 },
+  { type: 'van',    sfSymbol: 'bus.fill',       label: 'Van',     description: 'Groups up to 8',       baseFare: 2.0, perKm: 0.8, maxSeats: 8 },
 ];
 
 export const calculateFare = (vehicle: VehicleOption, distanceKm: number) =>
@@ -42,7 +42,6 @@ export default function VehicleSelector({
   selected,
   onSelect,
   distanceKm,
-  durationMin,
   isShareRide = false,
   groupSize = 1,
 }: VehicleSelectorProps) {
@@ -54,13 +53,21 @@ export default function VehicleSelector({
         const standardFare = calculateFare(v, distanceKm);
         const fare = isShareRide ? calculateShareFare(v, distanceKm) : standardFare;
         const isSelected = selected === v.type;
+        const iconColor = isSelected ? '#D4AF37' : 'rgba(255,255,255,0.85)';
         return (
           <TouchableOpacity
             key={v.type}
             onPress={() => onSelect(v.type)}
             style={[styles.card, isSelected && styles.cardSelected]}
           >
-            <Text style={styles.icon}>{v.icon}</Text>
+            <View style={styles.iconWrap}>
+              <SymbolView
+                name={v.sfSymbol}
+                style={styles.icon}
+                tintColor={iconColor}
+                resizeMode="scaleAspectFit"
+              />
+            </View>
             <Text style={[styles.label, isSelected && styles.labelSelected]}>{v.label}</Text>
             <Text style={styles.baseFare}>From ${v.baseFare.toFixed(2)}</Text>
             {isShareRide ? (
@@ -95,7 +102,8 @@ const styles = StyleSheet.create({
     borderColor: '#D4AF37',
     backgroundColor: 'rgba(212,175,55,0.15)',
   },
-  icon: { fontSize: 24, marginBottom: 4 },
+  iconWrap: { marginBottom: 6 },
+  icon: { width: 28, height: 28 },
   label: { fontSize: 12, fontWeight: '600', color: '#fff' },
   labelSelected: { color: '#D4AF37' },
   baseFare: { fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 },

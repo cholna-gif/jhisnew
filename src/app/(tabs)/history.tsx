@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Modal,
 } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -26,8 +27,9 @@ const STATUS_PILL: Record<string, { label: string; color: string; bg: string }> 
   scheduled: { label: 'Scheduled', color: '#44403c', bg: '#f5f5f4' },
 };
 
-const PAYMENT_ICON: Record<string, string> = {
-  cash: '💵', card: '💳', wallet: '👛', aba: '🏦', wing: '📱',
+const PAYMENT_SYMBOL: Record<string, string> = {
+  cash: 'banknote.fill', card: 'creditcard.fill', wallet: 'wallet.pass.fill',
+  aba: 'building.columns.fill', wing: 'smartphone',
 };
 
 export default function HistoryScreen() {
@@ -93,7 +95,7 @@ export default function HistoryScreen() {
   if (rides.length === 0) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.emptyIcon}>🕐</Text>
+        <SymbolView name="clock" style={styles.emptyIcon} tintColor="#9ca3af" resizeMode="scaleAspectFit" />
         <Text style={styles.emptyTitle}>No rides yet</Text>
         <Text style={styles.emptyText}>Book your first ride from the Book tab!</Text>
       </SafeAreaView>
@@ -148,7 +150,10 @@ export default function HistoryScreen() {
         {/* Monthly stats — past tab */}
         {activeSection === 'past' && thisMonthCompleted.length > 0 && (
           <View style={styles.statsCard}>
-            <Text style={styles.statsTitle}>📊 This Month</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+              <SymbolView name="chart.bar.fill" style={{ width: 13, height: 13 }} tintColor="#6b7280" resizeMode="scaleAspectFit" />
+              <Text style={styles.statsTitle}>This Month</Text>
+            </View>
             <View style={styles.statsGrid}>
               <View style={styles.statItem}>
                 <Text style={styles.statLabel}>Total Spent</Text>
@@ -164,7 +169,10 @@ export default function HistoryScreen() {
               </View>
               <View style={styles.statItem}>
                 <Text style={styles.statLabel}>Top Method</Text>
-                <Text style={styles.statValue}>{PAYMENT_ICON[topMethod] ?? ''} {topMethod}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                  <SymbolView name={(PAYMENT_SYMBOL[topMethod] ?? 'creditcard.fill') as any} style={{ width: 16, height: 16 }} tintColor="#111" resizeMode="scaleAspectFit" />
+                  <Text style={styles.statValue}>{topMethod}</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -186,7 +194,7 @@ export default function HistoryScreen() {
                 <View style={styles.rideCardTop}>
                   <Text style={styles.rideDate}>
                     {r.status === 'scheduled' && r.scheduled_datetime
-                      ? `📅 ${new Date(r.scheduled_datetime).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                      ? new Date(r.scheduled_datetime).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
                       : new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
                     }
                   </Text>
@@ -197,12 +205,12 @@ export default function HistoryScreen() {
                   </View>
                 </View>
                 <View style={styles.rideAddressRow}>
-                  <Text style={styles.rideAddressIcon}>📍</Text>
+                  <SymbolView name="location.fill" style={styles.rideAddressIcon} tintColor="#22c55e" resizeMode="scaleAspectFit" />
                   <Text style={styles.rideAddress} numberOfLines={1}>{r.pickup_address || 'Pickup'}</Text>
                 </View>
                 {r.destination_address && (
                   <View style={styles.rideAddressRow}>
-                    <Text style={styles.rideAddressIcon}>🏁</Text>
+                    <SymbolView name="flag.fill" style={styles.rideAddressIcon} tintColor="#ef4444" resizeMode="scaleAspectFit" />
                     <Text style={styles.rideAddress} numberOfLines={1}>{r.destination_address}</Text>
                   </View>
                 )}
@@ -265,7 +273,7 @@ export default function HistoryScreen() {
                 <DetailRow label="Vehicle" value={selected.vehicle_type || 'Standard'} />
                 <DetailRow label="Distance" value={selected.distance_km ? `${selected.distance_km.toFixed(1)} km` : 'N/A'} />
                 <DetailRow label="Fare" value={formatDualCurrency(selected.final_fare || selected.estimated_fare || selected.offered_fare || 0)} />
-                <DetailRow label="Payment" value={`${PAYMENT_ICON[selected.payment_method ?? ''] ?? ''} ${selected.payment_method || 'N/A'}`} />
+                <DetailRow label="Payment" value={selected.payment_method || 'N/A'} />
                 {selected.driver_id && profiles[selected.driver_id] && (
                   <DetailRow label="Driver" value={profiles[selected.driver_id].full_name} />
                 )}
@@ -292,7 +300,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  emptyIcon: { fontSize: 52, marginBottom: 12 },
+  emptyIcon: { width: 52, height: 52, marginBottom: 12 },
   emptyTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8 },
   emptyText: { fontSize: 14, color: '#6b7280', textAlign: 'center' },
   tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
@@ -322,7 +330,7 @@ const styles = StyleSheet.create({
   statusPill: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   statusPillText: { fontSize: 10, fontWeight: '600' },
   rideAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  rideAddressIcon: { fontSize: 12 },
+  rideAddressIcon: { width: 12, height: 12 },
   rideAddress: { flex: 1, fontSize: 13, color: '#374151' },
   rideCardBottom: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   rideVehicle: { fontSize: 13, color: '#9ca3af', textTransform: 'capitalize' },

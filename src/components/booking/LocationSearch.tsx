@@ -3,7 +3,7 @@
  * No API key required. Suggestions appear instantly as the user types.
  * Shows popular Cambodia places when focused with empty input.
  */
-import React, { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 import { LatLng } from '@/types';
 
 // ── Popular Cambodia places shown before user types ───────────────────────────
@@ -147,7 +148,7 @@ export default function LocationSearch({
     <View style={styles.wrapper}>
       {/* ── Input row ── */}
       <View style={[styles.inputRow, focused && styles.inputRowFocused]}>
-        <Text style={styles.pinIcon}>📍</Text>
+        <SymbolView name="location.fill" style={styles.pinIcon} tintColor="rgba(255,255,255,0.55)" resizeMode="scaleAspectFit" />
         <TextInput
           ref={inputRef}
           style={styles.input}
@@ -172,7 +173,7 @@ export default function LocationSearch({
         {showGps && value.length === 0 && (
           <TouchableOpacity onPress={onGps} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}>
             <View style={styles.gpsCircle}>
-              <Text style={styles.gpsIcon}>⌖</Text>
+              <SymbolView name="location.circle.fill" style={{ width: 16, height: 16 }} tintColor="#D4AF37" resizeMode="scaleAspectFit" />
             </View>
           </TouchableOpacity>
         )}
@@ -185,7 +186,7 @@ export default function LocationSearch({
           {showGps && onGps && (
             <TouchableOpacity style={styles.gpsRow} onPress={() => { setShowDropdown(false); onGps(); }}>
               <View style={[styles.iconBox, { backgroundColor: 'rgba(212,175,55,0.15)' }]}>
-                <Text style={styles.iconBoxText}>⌖</Text>
+                <SymbolView name="location.circle.fill" style={styles.iconBoxSymbol} tintColor="#D4AF37" resizeMode="scaleAspectFit" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.suggName}>Use my current location</Text>
@@ -214,7 +215,12 @@ export default function LocationSearch({
                 activeOpacity={0.7}
               >
                 <View style={styles.iconBox}>
-                  <Text style={styles.iconBoxText}>{value.trim().length < 2 ? '⭐' : '📍'}</Text>
+                  <SymbolView
+                    name={value.trim().length < 2 ? 'star.fill' : 'location.fill'}
+                    style={styles.iconBoxSymbol}
+                    tintColor={value.trim().length < 2 ? '#D4AF37' : 'rgba(255,255,255,0.7)'}
+                    resizeMode="scaleAspectFit"
+                  />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.suggName} numberOfLines={1}>{item.name}</Text>
@@ -251,7 +257,8 @@ const styles = StyleSheet.create({
     borderColor: '#D4AF37',
     backgroundColor: '#2a3868',
   },
-  pinIcon: { fontSize: 15, opacity: 0.7 },
+  pinIcon: { width: 15, height: 15, opacity: 0.7 },
+  iconBoxSymbol: { width: 18, height: 18 },
   input: {
     flex: 1,
     color: '#fff',

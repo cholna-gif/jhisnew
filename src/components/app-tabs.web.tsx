@@ -13,10 +13,10 @@ import { ThemedView } from './themed-view';
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 
 const NAV_ITEMS = [
-  { name: 'index',   href: '/(tabs)',          label: '🛺  Book'     },
-  { name: 'myride',  href: '/(tabs)/myride',   label: '🚗  My Ride'  },
-  { name: 'history', href: '/(tabs)/history',  label: '📋  History'  },
-  { name: 'profile', href: '/(tabs)/profile',  label: '👤  Profile'  },
+  { name: 'index',   href: '/(tabs)',          label: 'Book'     },
+  { name: 'myride',  href: '/(tabs)/myride',   label: 'My Ride'  },
+  { name: 'history', href: '/(tabs)/history',  label: 'History'  },
+  { name: 'profile', href: '/(tabs)/profile',  label: 'Profile'  },
 ];
 
 export default function AppTabs() {
