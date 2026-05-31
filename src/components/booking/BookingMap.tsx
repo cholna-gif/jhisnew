@@ -2,9 +2,11 @@
  * BookingMap (native) — shows pickup, destination, route AND nearby online drivers.
  * Online driver positions are fetched every 5 seconds and via Supabase realtime.
  */
-import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import MapView, { Marker, Polyline, MapPressEvent, Region } from 'react-native-maps';
+import { SymbolView } from 'expo-symbols';
+import type { SFSymbol } from 'sf-symbols-typescript';
 import { supabase } from '@/lib/supabase';
 import { LatLng } from '@/types';
 
@@ -22,6 +24,13 @@ interface OnlineDriver {
   current_lng: number;
   vehicle_type?: string;
 }
+
+const VEHICLE_SYMBOL: Record<string, SFSymbol> = {
+  tuktuk: 'car.2.fill',
+  car:    'car.fill',
+  moto:   'motorcycle',
+  van:    'bus.fill',
+};
 
 const DEFAULT_REGION: Region = {
   latitude: 13.3671,   // Siem Reap default
@@ -101,8 +110,17 @@ export default function BookingMap({
           key={d.user_id}
           coordinate={{ latitude: d.current_lat, longitude: d.current_lng }}
           title={`Driver · ${d.vehicle_type ?? ''}`}
-          pinColor="#1A2744"
-        />
+          anchor={{ x: 0.5, y: 0.5 }}
+        >
+          <View style={styles.driverMarker}>
+            <SymbolView
+              name={VEHICLE_SYMBOL[d.vehicle_type ?? ''] ?? 'car.fill'}
+              style={styles.driverMarkerIcon}
+              tintColor="#fff"
+              resizeMode="scaleAspectFit"
+            />
+          </View>
+        </Marker>
       ))}
 
       {/* ── Pickup ── */}
@@ -127,3 +145,20 @@ export default function BookingMap({
     </MapView>
   );
 }
+
+const styles = StyleSheet.create({
+  driverMarker: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1A2744',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#D4AF37',
+  },
+  driverMarkerIcon: {
+    width: 18,
+    height: 18,
+  },
+});
