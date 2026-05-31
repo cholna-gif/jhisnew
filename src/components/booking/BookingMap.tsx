@@ -86,7 +86,7 @@ export default function BookingMap({
   return (
     <MapView
       ref={mapRef}
-      style={StyleSheet.absoluteFillObject}
+      style={StyleSheet.absoluteFill}
       initialRegion={DEFAULT_REGION}
       onPress={onMapPress ? (e: MapPressEvent) => {
         const { latitude, longitude } = e.nativeEvent.coordinate;

@@ -524,7 +524,7 @@ const gS = StyleSheet.create({
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   bg: { flex: 1 },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(26,39,68,0.65)' },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(26,39,68,0.65)' },
   safe: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 24 },
 

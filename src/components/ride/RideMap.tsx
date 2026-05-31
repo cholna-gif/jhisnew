@@ -110,10 +110,10 @@ export default function RideMap({
   }, [driverPos, pickupLat, pickupLng, destLat, destLng]);
 
   return (
-    <View style={StyleSheet.absoluteFillObject}>
+    <View style={StyleSheet.absoluteFill}>
       <MapView
         ref={mapRef}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
         initialRegion={{ latitude: pickupLat, longitude: pickupLng, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
         showsUserLocation
         showsMyLocationButton={false}
