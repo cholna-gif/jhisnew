@@ -1,3 +1,8 @@
+/**
+ * LocationSearch — Grab-style autocomplete using Photon (Komoot).
+ * No API key required. Suggestions appear instantly as the user types.
+ * Shows popular Cambodia places when focused with empty input.
+ */
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -7,14 +12,28 @@ import {
   FlatList,
   StyleSheet,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { LatLng } from '@/types';
 
-const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+// ── Popular Cambodia places shown before user types ───────────────────────────
+const POPULAR: Suggestion[] = [
+  { id: 'angkor-wat',   name: 'Angkor Wat',            sub: 'Siem Reap, Cambodia',                lat: 13.4125, lng: 103.8670 },
+  { id: 'sr-airport',   name: 'Siem Reap Airport',     sub: 'National Road 6, Siem Reap',        lat: 13.4107, lng: 103.8129 },
+  { id: 'pub-street',   name: 'Pub Street',             sub: 'Siem Reap, Cambodia',               lat: 13.3622, lng: 103.8566 },
+  { id: 'pp-airport',   name: 'Phnom Penh Airport',    sub: 'Pochentong Blvd, Phnom Penh',       lat: 11.5466, lng: 104.8440 },
+  { id: 'royal-palace', name: 'Royal Palace',          sub: 'Samdach Sothearos Blvd, Phnom Penh',lat: 11.5648, lng: 104.9309 },
+  { id: 'riverside-pp', name: 'Riverside Phnom Penh',  sub: 'Phnom Penh, Cambodia',              lat: 11.5696, lng: 104.9282 },
+  { id: 'angkor-thom',  name: 'Angkor Thom',           sub: 'Siem Reap, Cambodia',               lat: 13.4414, lng: 103.8588 },
+  { id: 'bayon',        name: 'Bayon Temple',           sub: 'Angkor, Siem Reap',                 lat: 13.4413, lng: 103.8592 },
+];
 
-interface PlaceSuggestion {
-  place_id: string;
-  description: string;
+interface Suggestion {
+  id: string;
+  name: string;
+  sub: string;
+  lat: number;
+  lng: number;
 }
 
 interface LocationSearchProps {
@@ -28,31 +47,52 @@ interface LocationSearchProps {
   onGps?: () => void;
 }
 
+// Cambodia bounding box for Photon
+const BBOX = '102.1,10.4,107.6,14.7';
+
 export default function LocationSearch({
-  label,
-  value,
-  onChange,
-  onSelect,
-  onClear,
-  onFocus,
-  showGps,
-  onGps,
+  label, value, onChange, onSelect, onClear, onFocus, showGps, onGps,
 }: LocationSearchProps) {
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [focused, setFocused] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [loading,     setLoading]     = useState(false);
+  const [focused,     setFocused]     = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const inputRef   = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchSuggestions = useCallback(async (text: string) => {
-    if (text.length < 2) { setSuggestions([]); return; }
+  // ── Photon autocomplete ───────────────────────────────────────────────────
+  const search = useCallback(async (text: string) => {
+    if (text.trim().length < 2) {
+      setSuggestions(POPULAR);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&key=${GOOGLE_API_KEY}&components=country:kh`;
-      const res = await fetch(url);
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(text)}&limit=8&lang=en&bbox=${BBOX}`;
+      const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const data = await res.json();
-      setSuggestions(data.predictions ?? []);
+
+      const results: Suggestion[] = (data.features ?? []).map((f: any, i: number) => {
+        const p    = f.properties ?? {};
+        const name = p.name || p.street || p.district || p.city || 'Location';
+        const parts = [p.street, p.district, p.city, p.county, p.country]
+          .filter(Boolean)
+          .filter((v, idx, arr) => arr.indexOf(v) === idx)
+          .filter(v => v !== name)
+          .slice(0, 3);
+        return {
+          id:  `photon-${i}-${f.geometry?.coordinates?.join(',')}`,
+          name,
+          sub: parts.join(', ') || p.country || 'Cambodia',
+          lat: f.geometry?.coordinates?.[1] ?? 0,
+          lng: f.geometry?.coordinates?.[0] ?? 0,
+        };
+      }).filter((s: Suggestion) => s.lat !== 0);
+
+      setSuggestions(results.length > 0 ? results : POPULAR);
     } catch {
-      setSuggestions([]);
+      setSuggestions(POPULAR);
     } finally {
       setLoading(false);
     }
@@ -61,57 +101,125 @@ export default function LocationSearch({
   const handleChange = (text: string) => {
     onChange(text);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchSuggestions(text), 350);
+    if (text.trim().length < 2) {
+      setSuggestions(POPULAR);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      debounceRef.current = setTimeout(() => search(text), 300);
+    }
   };
 
-  const handleSelect = async (item: PlaceSuggestion) => {
-    setSuggestions([]);
-    setFocused(false);
-    try {
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${item.place_id}&fields=geometry,formatted_address&key=${GOOGLE_API_KEY}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      const loc = data.result?.geometry?.location;
-      const addr = data.result?.formatted_address ?? item.description;
-      if (loc) {
-        onSelect({ lat: loc.lat, lng: loc.lng, address: addr });
-      }
-    } catch {}
+  const handleFocus = () => {
+    setFocused(true);
+    setShowDropdown(true);
+    onFocus?.();
+    if (value.trim().length < 2) setSuggestions(POPULAR);
+    else search(value);
   };
+
+  const handleBlur = () => {
+    // Delay so tap on suggestion registers first
+    setTimeout(() => {
+      setFocused(false);
+      setShowDropdown(false);
+    }, 180);
+  };
+
+  const handleSelect = (item: Suggestion) => {
+    setShowDropdown(false);
+    setFocused(false);
+    inputRef.current?.blur();
+    onChange(item.name);
+    onSelect({ lat: item.lat, lng: item.lng, address: `${item.name}, ${item.sub}` });
+  };
+
+  const handleClear = () => {
+    onChange('');
+    setSuggestions(POPULAR);
+    onClear?.();
+    inputRef.current?.focus();
+  };
+
+  const dropdownVisible = showDropdown && (suggestions.length > 0 || loading);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.wrapper}>
+      {/* ── Input row ── */}
       <View style={[styles.inputRow, focused && styles.inputRowFocused]}>
+        <Text style={styles.pinIcon}>📍</Text>
         <TextInput
+          ref={inputRef}
           style={styles.input}
           placeholder={label}
-          placeholderTextColor="rgba(255,255,255,0.4)"
+          placeholderTextColor="rgba(255,255,255,0.45)"
           value={value}
           onChangeText={handleChange}
-          onFocus={() => { setFocused(true); onFocus?.(); }}
-          onBlur={() => setTimeout(() => setFocused(false), 200)}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          returnKeyType="search"
+          autoCorrect={false}
+          autoCapitalize="none"
         />
-        {loading && <ActivityIndicator size="small" color="#D4AF37" style={styles.icon} />}
+        {loading && <ActivityIndicator size="small" color="#D4AF37" style={{ marginLeft: 6 }} />}
         {!loading && value.length > 0 && (
-          <TouchableOpacity onPress={() => { onChange(''); setSuggestions([]); onClear?.(); }}>
-            <Text style={styles.clearBtn}>✕</Text>
+          <TouchableOpacity onPress={handleClear} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <View style={styles.clearCircle}>
+              <Text style={styles.clearX}>✕</Text>
+            </View>
           </TouchableOpacity>
         )}
-        {showGps && !value && (
-          <TouchableOpacity onPress={onGps} style={styles.gpsBtn}>
-            <Text style={styles.gpsBtnText}>📍</Text>
+        {showGps && value.length === 0 && (
+          <TouchableOpacity onPress={onGps} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}>
+            <View style={styles.gpsCircle}>
+              <Text style={styles.gpsIcon}>⌖</Text>
+            </View>
           </TouchableOpacity>
         )}
       </View>
-      {focused && suggestions.length > 0 && (
+
+      {/* ── Dropdown ── */}
+      {dropdownVisible && (
         <View style={styles.dropdown}>
+          {/* GPS shortcut row */}
+          {showGps && onGps && (
+            <TouchableOpacity style={styles.gpsRow} onPress={() => { setShowDropdown(false); onGps(); }}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(212,175,55,0.15)' }]}>
+                <Text style={styles.iconBoxText}>⌖</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.suggName}>Use my current location</Text>
+                <Text style={styles.suggSub}>GPS — pin your exact position</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+
+          {/* Divider when showing popular */}
+          {value.trim().length < 2 && (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeaderText}>Popular places</Text>
+            </View>
+          )}
+
           <FlatList
             data={suggestions}
-            keyExtractor={item => item.place_id}
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.suggestion} onPress={() => handleSelect(item)}>
-                <Text style={styles.suggestionText} numberOfLines={2}>{item.description}</Text>
+            keyExtractor={item => item.id}
+            keyboardShouldPersistTaps="always"
+            scrollEnabled={suggestions.length > 4}
+            style={{ maxHeight: 300 }}
+            renderItem={({ item, index }) => (
+              <TouchableOpacity
+                style={[styles.suggRow, index === suggestions.length - 1 && { borderBottomWidth: 0 }]}
+                onPress={() => handleSelect(item)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.iconBox}>
+                  <Text style={styles.iconBoxText}>{value.trim().length < 2 ? '⭐' : '📍'}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.suggName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.suggSub}  numberOfLines={1}>{item.sub}</Text>
+                </View>
               </TouchableOpacity>
             )}
           />
@@ -122,42 +230,120 @@ export default function LocationSearch({
 }
 
 const styles = StyleSheet.create({
-  container: { position: 'relative', zIndex: 10 },
+  wrapper: {
+    position: 'relative',
+    zIndex: 100,
+  },
+
+  // ── Input ──
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#243059',
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.15)',
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 10,
+    gap: 8,
   },
-  inputRowFocused: { borderColor: '#D4AF37' },
-  input: { flex: 1, color: '#fff', fontSize: 14 },
-  icon: { marginLeft: 8 },
-  clearBtn: { color: 'rgba(255,255,255,0.5)', marginLeft: 8, fontSize: 14 },
-  gpsBtn: { marginLeft: 8 },
-  gpsBtnText: { fontSize: 16 },
+  inputRowFocused: {
+    borderColor: '#D4AF37',
+    backgroundColor: '#2a3868',
+  },
+  pinIcon: { fontSize: 15, opacity: 0.7 },
+  input: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 15,
+    padding: 0,
+  },
+  clearCircle: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  clearX: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  gpsCircle: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: 'rgba(212,175,55,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(212,175,55,0.4)',
+  },
+  gpsIcon: { color: '#D4AF37', fontSize: 16, lineHeight: 20 },
+
+  // ── Dropdown ──
   dropdown: {
     position: 'absolute',
     top: '100%',
     left: 0,
     right: 0,
-    backgroundColor: '#1A2744',
-    borderRadius: 10,
+    marginTop: 4,
+    backgroundColor: '#1e2d52',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    maxHeight: 220,
-    zIndex: 100,
-    elevation: 8,
-    boxShadow: '0px 4px 8px rgba(0,0,0,0.4)',
+    borderColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+    zIndex: 999,
+    elevation: 12,
+    ...(Platform.OS === 'web' ? { boxShadow: '0 8px 24px rgba(0,0,0,0.5)' } : {
+      shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.45, shadowRadius: 14,
+    }),
   },
-  suggestion: {
+
+  // GPS first row
+  gpsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.07)',
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
-  suggestionText: { color: '#fff', fontSize: 13 },
+
+  // Section header
+  sectionHeader: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  sectionHeaderText: {
+    fontSize: 11,
+    color: '#D4AF37',
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+
+  // Suggestion row
+  suggRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  iconBox: {
+    width: 34, height: 34, borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  iconBoxText: { fontSize: 16 },
+  suggName: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '600',
+    lineHeight: 19,
+  },
+  suggSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+    lineHeight: 17,
+    marginTop: 1,
+  },
 });
