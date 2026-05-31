@@ -8,8 +8,12 @@ interface AuthContextValue {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string
+  ) => Promise<{ error: string | null; needsVerification: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -32,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // Restore existing session on app launch
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -52,29 +57,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signIn = async (email: string, password: string) => {
+  // ── Login ─────────────────────────────────────────────────────────────────
+  const signIn = async (email: string, password: string): Promise<{ error: string | null }> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
+    if (error) return { error: error.message };
+    return { error: null };
   };
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  // ── Register ──────────────────────────────────────────────────────────────
+  // Registration NEVER signs the user in automatically.  After a successful
+  // sign-up we:
+  //   1. Create profile + user_roles rows (same tables jihwolrd uses)
+  //   2. Sign the user OUT so they must log in manually (jihwolrd behaviour)
+  //   3. Return needsVerification=true so the UI can show the email check screen
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string
+  ): Promise<{ error: string | null; needsVerification: boolean }> => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: {
+        data: { full_name: fullName, role: 'passenger' },
+      },
     });
-    if (!error && data.user) {
-      await supabase.from('profiles').upsert({
-        id: data.user.id,
-        full_name: fullName,
-        email,
-        role: 'passenger',
-        wallet_balance: 0,
-      });
+
+    if (error) return { error: error.message, needsVerification: false };
+
+    const newUser = data.user;
+    if (!newUser) return { error: 'Could not create account', needsVerification: false };
+
+    // Upsert profile row
+    await supabase.from('profiles').upsert({
+      id: newUser.id,
+      full_name: fullName,
+      email,
+      role: 'passenger',
+      wallet_balance: 0,
+    });
+
+    // Insert passenger role (jihwolrd's RLS policies check this table)
+    await supabase.from('user_roles').upsert({
+      user_id: newUser.id,
+      role: 'passenger',
+    });
+
+    // If Supabase returned an active session (email confirm disabled), sign out.
+    // We always want the user to log in manually, just like on jihwolrd.
+    if (data.session) {
+      await supabase.auth.signOut();
     }
-    return { error };
+
+    // needsVerification is true when the email is not yet confirmed
+    const needsVerification = !newUser.email_confirmed_at;
+    return { error: null, needsVerification };
   };
 
+  // ── Sign Out ──────────────────────────────────────────────────────────────
   const signOut = async () => {
     await supabase.auth.signOut();
   };
@@ -84,7 +124,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, signIn, signUp, signOut, refreshProfile }}>
+    <AuthContext.Provider
+      value={{ session, user, profile, loading, signIn, signUp, signOut, refreshProfile }}
+    >
       {children}
     </AuthContext.Provider>
   );

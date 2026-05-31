@@ -6,18 +6,17 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
-import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
+import { Pressable, useColorScheme, View, StyleSheet, Text } from 'react-native';
 
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
-
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 
 const NAV_ITEMS = [
-  { name: 'home', href: '/', label: '🛺 Book' },
-  { name: 'myride', href: '/myride', label: '🚗 My Ride' },
-  { name: 'history', href: '/history', label: '📋 History' },
-  { name: 'profile', href: '/profile', label: '👤 Profile' },
+  { name: 'index',   href: '/(tabs)',          label: '🛺  Book'     },
+  { name: 'myride',  href: '/(tabs)/myride',   label: '🚗  My Ride'  },
+  { name: 'history', href: '/(tabs)/history',  label: '📋  History'  },
+  { name: 'profile', href: '/(tabs)/profile',  label: '👤  Profile'  },
 ];
 
 export default function AppTabs() {
@@ -42,7 +41,8 @@ export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
+        style={styles.tabButtonView}
+      >
         <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
           {children}
         </ThemedText>
@@ -52,15 +52,10 @@ export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps
 }
 
 export function CustomTabList(props: TabListProps) {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
-
   return (
     <View {...props} style={styles.tabListContainer}>
       <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          🛺 Jih
-        </ThemedText>
+        <Text style={styles.brandText}>🛺 jih</Text>
         {props.children}
       </ThemedView>
     </View>
@@ -90,10 +85,10 @@ const styles = StyleSheet.create({
   brandText: {
     marginRight: 'auto',
     color: '#D4AF37',
+    fontWeight: '700',
+    fontSize: 15,
   },
-  pressed: {
-    opacity: 0.7,
-  },
+  pressed: { opacity: 0.7 },
   tabButtonView: {
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.three,

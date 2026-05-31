@@ -188,7 +188,8 @@ export default function ScheduledRideTab({ onRideCreated }: ScheduledRideTabProp
     } as any);
     setLoading(false);
     if (error) {
-      Alert.alert('Error', 'Failed to schedule ride');
+      console.error('Scheduled ride insert error:', error);
+      Alert.alert('Booking Failed', error.message || 'Failed to schedule ride. Please try again.');
     } else {
       await supabase.from('notifications').insert({
         user_id: user.id,

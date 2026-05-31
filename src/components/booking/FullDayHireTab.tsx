@@ -117,9 +117,10 @@ export default function FullDayHireTab({ onRideCreated }: FullDayHireTabProps) {
 
     setLoading(false);
     if (error) {
-      Alert.alert('Error', 'Failed to send offer. Please try again.');
+      console.error('Full day insert error:', error);
+      Alert.alert('Booking Failed', error.message || 'Failed to send offer. Please try again.');
     } else {
-      Alert.alert('Success', 'Offer sent! Looking for a driver...');
+      Alert.alert('Offer Sent! 🛺', 'Looking for a driver to accept…');
       onRideCreated();
     }
   };

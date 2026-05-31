@@ -220,10 +220,10 @@ export default function BookScreen() {
     setShowPayment(false);
     setShowConfirm(false);
     if (error) {
-      Alert.alert('Error', 'Failed to create ride. Please try again.');
+      console.error('Booking insert error:', error);
+      Alert.alert('Booking Failed', error.message || 'Failed to create ride. Please try again.');
     } else {
-      Alert.alert('Success', 'Ride requested! Looking for a driver...');
-      // Reset form
+      Alert.alert('Ride Requested! 🛺', 'Looking for a driver…');
       setPickup(null); setDestination(null); setStops([]);
       setPickupText(''); setDestText(''); setStopTexts([]);
       setRouteCoords([]); setPanelOpen(false);
