@@ -64,6 +64,54 @@ export default function BookScreen() {
   // Confirm screen state machine
   const [confirmState, setConfirmState] = useState<ConfirmState>('idle');
   const [confirmError, setConfirmError] = useState('');
+  const [bookedRideId, setBookedRideId] = useState<string | null>(null);
+
+  // ── Auto-navigate to My Ride when driver accepts ──────────────────────────
+  // Watches the newly created ride via realtime + polling.  The moment status
+  // changes away from 'pending' (driver accepted → 'matched') we jump to the
+  // My Ride tab so the passenger sees the driver immediately.
+  useEffect(() => {
+    if (!bookedRideId || confirmState !== 'success') return;
+
+    let navigated = false;
+    const go = () => {
+      if (navigated) return;
+      navigated = true;
+      handleGoToMyRide();
+    };
+
+    // Realtime subscription — instant notification
+    const channel = supabase
+      .channel(`booked-ride-${bookedRideId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'rides',
+        filter: `id=eq.${bookedRideId}`,
+      }, (payload: any) => {
+        const status = payload.new?.status;
+        if (status && status !== 'pending' && status !== 'scheduled') go();
+      })
+      .subscribe();
+
+    // Polling fallback every 3 s
+    const poll = setInterval(async () => {
+      const { data } = await supabase
+        .from('rides' as any)
+        .select('status')
+        .eq('id', bookedRideId)
+        .single() as any;
+      const status = data?.status;
+      if (status && status !== 'pending' && status !== 'scheduled') go();
+    }, 3000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(poll);
+    };
+  // handleGoToMyRide is stable (no deps change), safe to omit
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookedRideId, confirmState]);
 
   const selectedVehicle = VEHICLE_OPTIONS.find(v => v.type === vehicleType)!;
   const isShareRide     = rideType === 'share';
@@ -209,7 +257,7 @@ export default function BookScreen() {
     const pStatus        = paymentMethod === 'cash' ? 'pending' : 'paid';
 
     try {
-      const { error } = await supabase.from('rides' as any).insert({
+      const { data: newRide, error } = await (supabase.from('rides' as any).insert({
         passenger_id:      user.id,
         booking_type:      'standard',
         status:            'pending',
@@ -230,13 +278,14 @@ export default function BookScreen() {
         group_size:        groupSize,
         remaining_seats:   remainingSeats > 0 ? remainingSeats : null,
         shared_ride_group: isShareRide ? uuid() : null,
-      } as any);
+      } as any).select('id').single() as any);
 
       if (error) {
         console.error('Booking insert error:', error);
         setConfirmError(error.message || 'Failed to create ride. Please try again.');
         setConfirmState('error');
       } else {
+        setBookedRideId(newRide?.id ?? null);
         setConfirmState('success');
       }
     } catch (e: any) {
@@ -292,9 +341,12 @@ export default function BookScreen() {
               <Text style={styles.resultEmoji}>🛺</Text>
             </View>
             <Text style={styles.resultTitle}>Ride Requested!</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <ActivityIndicator size="small" color="#D4AF37" />
+              <Text style={{ color: '#D4AF37', fontSize: 13, fontWeight: '600' }}>Searching for a driver…</Text>
+            </View>
             <Text style={styles.resultBody}>
-              Looking for a driver near you.{'\n'}
-              You can track your ride in real time.
+              We'll take you to My Ride automatically{'\n'}once a driver accepts.
             </Text>
 
             {/* Ride summary */}
