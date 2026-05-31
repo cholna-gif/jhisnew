@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { SymbolView } from 'expo-symbols';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { hasActiveRide, isPassengerSuspended, SUSPENDED_BOOKING_MSG } from '@/lib/ride-guards';
@@ -130,7 +131,10 @@ export default function FullDayHireTab({ onRideCreated }: FullDayHireTabProps) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <Text style={styles.title}>⏰ Full Day Hire</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <SymbolView name="calendar.badge.clock" style={{ width: 22, height: 22 }} tintColor="#fff" resizeMode="scaleAspectFit" />
+          <Text style={styles.title}>Full Day Hire</Text>
+        </View>
         <Text style={styles.subtitle}>Tap map or search to set pickup</Text>
 
         <Text style={styles.fieldLabel}>PICKUP LOCATION</Text>
@@ -232,7 +236,7 @@ export default function FullDayHireTab({ onRideCreated }: FullDayHireTabProps) {
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: '#1A2744' },
   content: { padding: 16, paddingBottom: 120 },
-  title: { fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center', marginBottom: 4 },
+  title: { fontSize: 18, fontWeight: '700', color: '#fff' },
   subtitle: { fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginBottom: 16 },
   fieldLabel: { fontSize: 11, color: '#D4AF37', fontWeight: '600', letterSpacing: 1, marginTop: 12, marginBottom: 6 },
   input: {

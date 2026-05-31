@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,8 @@ import BookingMap from '@/components/booking/BookingMap';
 import FullDayHireTab from '@/components/booking/FullDayHireTab';
 import ScheduledRideTab from '@/components/booking/ScheduledRideTab';
 import { formatDualCurrency, formatUsd } from '@/lib/currency';
+import { SymbolView } from 'expo-symbols';
+import type { SFSymbol } from 'sf-symbols-typescript';
 import { haversineDistance } from '@/lib/geo-utils';
 import { LatLng, BookingMode, RideType } from '@/types';
 
@@ -31,10 +33,10 @@ const MODES: { id: BookingMode; label: string }[] = [
   { id: 'favorite', label: 'Favorite' },
 ];
 
-const PAYMENT_OPTIONS = [
-  { id: 'cash',   label: '💵 Cash'   },
-  { id: 'card',   label: '💳 Card'   },
-  { id: 'wallet', label: '👛 Wallet' },
+const PAYMENT_OPTIONS: { id: string; label: string; symbol: SFSymbol }[] = [
+  { id: 'cash',   label: 'Cash',   symbol: 'banknote.fill'    },
+  { id: 'card',   label: 'Card',   symbol: 'creditcard.fill'  },
+  { id: 'wallet', label: 'Wallet', symbol: 'wallet.pass.fill' },
 ];
 
 type ConfirmState = 'idle' | 'checking' | 'submitting' | 'success' | 'error';
@@ -452,18 +454,22 @@ export default function BookScreen() {
           <View style={styles.confirmCard}>
             <Text style={[styles.routeLabel, { marginBottom: 10 }]}>PAYMENT METHOD</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              {PAYMENT_OPTIONS.map(pm => (
-                <TouchableOpacity
-                  key={pm.id}
-                  onPress={() => setPaymentMethod(pm.id)}
-                  style={[styles.pmBtn, paymentMethod === pm.id && styles.pmBtnActive]}
-                  disabled={isWorking}
-                >
-                  <Text style={[styles.pmBtnText, paymentMethod === pm.id && { fontWeight: '700' }]}>
-                    {pm.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {PAYMENT_OPTIONS.map(pm => {
+                const active = paymentMethod === pm.id;
+                return (
+                  <TouchableOpacity
+                    key={pm.id}
+                    onPress={() => setPaymentMethod(pm.id)}
+                    style={[styles.pmBtn, active && styles.pmBtnActive]}
+                    disabled={isWorking}
+                  >
+                    <SymbolView name={pm.symbol} style={{ width: 14, height: 14 }} tintColor={active ? '#D4AF37' : '#9ca3af'} resizeMode="scaleAspectFit" />
+                    <Text style={[styles.pmBtnText, active && { fontWeight: '700', color: '#D4AF37' }]}>
+                      {pm.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         </ScrollView>
@@ -511,7 +517,9 @@ export default function BookScreen() {
       <SafeAreaView style={[styles.screen, { backgroundColor: '#1A2744' }]}>
         <ModeBar />
         <View style={styles.comingSoon}>
-          <Text style={{ fontSize: 52 }}>❤️</Text>
+          <View style={styles.comingSoonIcon}>
+            <SymbolView name="heart.fill" style={{ width: 36, height: 36 }} tintColor="#D4AF37" resizeMode="scaleAspectFit" />
+          </View>
           <Text style={styles.comingSoonTitle}>Favorite Drivers</Text>
           <Text style={styles.comingSoonText}>Book your trusted drivers directly. Coming soon!</Text>
         </View>
@@ -597,12 +605,16 @@ export default function BookScreen() {
             </View>
 
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              {PAYMENT_OPTIONS.map(pm => (
-                <TouchableOpacity key={pm.id} onPress={() => setPaymentMethod(pm.id)}
-                  style={[styles.paymentBtn, paymentMethod === pm.id && styles.paymentBtnActive]}>
-                  <Text style={{ color: '#fff', fontSize: 12 }}>{pm.label}</Text>
-                </TouchableOpacity>
-              ))}
+              {PAYMENT_OPTIONS.map(pm => {
+                const active = paymentMethod === pm.id;
+                return (
+                  <TouchableOpacity key={pm.id} onPress={() => setPaymentMethod(pm.id)}
+                    style={[styles.paymentBtn, active && styles.paymentBtnActive]}>
+                    <SymbolView name={pm.symbol} style={{ width: 14, height: 14 }} tintColor={active ? '#D4AF37' : 'rgba(255,255,255,0.7)'} resizeMode="scaleAspectFit" />
+                    <Text style={{ color: active ? '#D4AF37' : '#fff', fontSize: 12, fontWeight: active ? '700' : '400' }}>{pm.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <TouchableOpacity style={styles.goldBtn} onPress={handleOpenConfirm}>
@@ -667,7 +679,7 @@ const styles = StyleSheet.create({
   rideTypeBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, backgroundColor: '#1A2744', alignItems: 'center', flexDirection: 'row', justifyContent: 'center' },
   rideTypeBtnActive: { backgroundColor: '#D4AF37' },
   rideTypeBtnText: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600' },
-  paymentBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: '#1A2744', alignItems: 'center' },
+  paymentBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: '#1A2744', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 },
   paymentBtnActive: { borderColor: '#D4AF37', backgroundColor: 'rgba(212,175,55,0.15)' },
   preRouteCta: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12, backgroundColor: '#1A2744', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' },
 
@@ -689,7 +701,7 @@ const styles = StyleSheet.create({
   strikeThrough: { color: 'rgba(255,255,255,0.4)', fontSize: 11, textDecorationLine: 'line-through' },
 
   // payment in confirm
-  pmBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: '#1A2744', alignItems: 'center' },
+  pmBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: '#1A2744', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 },
   pmBtnActive: { borderColor: '#D4AF37', backgroundColor: 'rgba(212,175,55,0.15)' },
   pmBtnText: { color: '#fff', fontSize: 12 },
 
@@ -711,6 +723,7 @@ const styles = StyleSheet.create({
 
   // coming soon
   comingSoon: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  comingSoonTitle: { fontSize: 20, fontWeight: '700', color: '#fff', marginBottom: 8, marginTop: 12 },
+  comingSoonIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(212,175,55,0.12)', borderWidth: 1.5, borderColor: 'rgba(212,175,55,0.3)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  comingSoonTitle: { fontSize: 20, fontWeight: '700', color: '#fff', marginBottom: 8 },
   comingSoonText: { color: 'rgba(255,255,255,0.6)', textAlign: 'center', fontSize: 14 },
 });
