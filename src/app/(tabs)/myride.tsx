@@ -1,41 +1,49 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
   StyleSheet,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { formatDualCurrency, formatUsd } from '@/lib/currency';
+import { formatDualCurrency } from '@/lib/currency';
 import { Ride } from '@/types';
 
 export default function MyRideScreen() {
   const { user } = useAuth();
-  const [ride, setRide] = useState<Ride | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [driverName, setDriverName] = useState('');
+  const [ride, setRide]               = useState<Ride | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [cancelling, setCancelling]   = useState(false);
+  const [driverName, setDriverName]   = useState('');
   const [driverProfile, setDriverProfile] = useState<any>(null);
-  const [rating, setRating] = useState(0);
-  const [review, setReview] = useState('');
-  const [submittingRating, setSubmittingRating] = useState(false);
-  const [showRating, setShowRating] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
+  const [isFavorite, setIsFavorite]   = useState(false);
   const [pendingTimedOut, setPendingTimedOut] = useState(false);
   const [pendingSecondsLeft, setPendingSecondsLeft] = useState<number | null>(null);
   const [driverCancelledRide, setDriverCancelledRide] = useState<Ride | null>(null);
-  const activeRideIdRef = useRef<string | null>(null);
-  const completionFlowStarted = useRef(false);
-  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [rating, setRating]           = useState(0);
+  const [review, setReview]           = useState('');
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [showRating, setShowRating]   = useState(false);
 
-  const fetchActiveRide = async () => {
+  // Stuck-ride force-clear state
+  const [stuckRideId, setStuckRideId] = useState<string | null>(null);
+  const [clearingStuck, setClearingStuck] = useState(false);
+
+  const activeRideIdRef          = useRef<string | null>(null);
+  const completionFlowStarted    = useRef(false);
+  const pendingTimerRef          = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCountdownRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Fetch active ride ─────────────────────────────────────────────────────
+  const fetchActiveRide = useCallback(async () => {
     if (!user) return;
+
     const { data } = await supabase
       .from('rides' as any)
       .select('*')
@@ -52,80 +60,77 @@ export default function MyRideScreen() {
         setRide(activeRide);
       }
     } else if (completionFlowStarted.current) {
-      // stay in post-ride flow
+      // keep post-ride flow mounted
+    } else if (!activeRide) {
+      // Check if driver recently cancelled
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data: cancelledData } = await supabase
+        .from('rides' as any)
+        .select('*')
+        .eq('passenger_id', user.id)
+        .eq('status', 'cancelled')
+        .eq('cancelled_by', 'driver')
+        .gte('cancelled_at', tenMinutesAgo)
+        .order('cancelled_at', { ascending: false })
+        .limit(1) as any;
+      setDriverCancelledRide((cancelledData as Ride[])?.[0] || null);
+      setRide(null);
+      activeRideIdRef.current = null;
+      setStuckRideId(null);
     } else {
-      if (!activeRide) {
-        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-        const { data: cancelledData } = await supabase
-          .from('rides' as any)
+      setDriverCancelledRide(null);
+      setRide(activeRide);
+      activeRideIdRef.current = activeRide.id;
+      setStuckRideId(null);
+
+      if (activeRide.driver_id) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', activeRide.driver_id)
+          .maybeSingle();
+        setDriverName((prof as any)?.full_name || 'Driver');
+
+        const { data: dp } = await supabase
+          .from('driver_profiles' as any)
           .select('*')
+          .eq('user_id', activeRide.driver_id)
+          .maybeSingle();
+        setDriverProfile(dp);
+
+        const { data: fav } = await supabase
+          .from('favorite_drivers' as any)
+          .select('id')
           .eq('passenger_id', user.id)
-          .eq('status', 'cancelled')
-          .eq('cancelled_by', 'driver')
-          .gte('cancelled_at', tenMinutesAgo)
-          .order('cancelled_at', { ascending: false })
-          .limit(1) as any;
-        setDriverCancelledRide((cancelledData as Ride[])?.[0] || null);
-        setRide(null);
-        activeRideIdRef.current = null;
-      } else {
-        setDriverCancelledRide(null);
-        setRide(activeRide);
-        activeRideIdRef.current = activeRide.id;
-
-        if (activeRide.driver_id) {
-          const { data: prof } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('id', activeRide.driver_id)
-            .maybeSingle();
-          setDriverName((prof as any)?.full_name || 'Driver');
-
-          const { data: dp } = await supabase
-            .from('driver_profiles' as any)
-            .select('*')
-            .eq('user_id', activeRide.driver_id)
-            .maybeSingle();
-          setDriverProfile(dp);
-
-          const { data: fav } = await supabase
-            .from('favorite_drivers' as any)
-            .select('id')
-            .eq('passenger_id', user.id)
-            .eq('driver_id', activeRide.driver_id)
-            .maybeSingle() as any;
-          setIsFavorite(!!fav);
-        }
+          .eq('driver_id', activeRide.driver_id)
+          .maybeSingle() as any;
+        setIsFavorite(!!fav);
       }
     }
     setLoading(false);
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchActiveRide();
     const interval = setInterval(fetchActiveRide, 3000);
-
     const channel = supabase
       .channel(`passenger-ride-${user?.id}`)
       .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'rides',
+        event: '*', schema: 'public', table: 'rides',
         filter: `passenger_id=eq.${user?.id}`,
       }, () => fetchActiveRide())
       .subscribe();
-
     return () => {
       clearInterval(interval);
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [fetchActiveRide]);
 
-  // 3-minute timeout for pending rides
+  // 3-minute pending timeout
   useEffect(() => {
     if (pendingTimerRef.current) { clearTimeout(pendingTimerRef.current); pendingTimerRef.current = null; }
     if (ride?.status === 'pending' && !pendingTimedOut) {
-      const elapsed = ride.created_at ? Date.now() - new Date(ride.created_at).getTime() : 0;
+      const elapsed   = ride.created_at ? Date.now() - new Date(ride.created_at).getTime() : 0;
       const remaining = Math.max(0, 3 * 60 * 1000 - elapsed);
       pendingTimerRef.current = setTimeout(() => setPendingTimedOut(true), remaining);
     }
@@ -136,7 +141,7 @@ export default function MyRideScreen() {
   // Auto-cancel after timeout
   useEffect(() => {
     if (!pendingTimedOut || !ride || ride.status !== 'pending') return;
-    const timer = setTimeout(async () => {
+    const t = setTimeout(async () => {
       const { data } = await supabase.from('rides' as any).select('status').eq('id', ride.id).maybeSingle() as any;
       if (data?.status === 'pending') {
         await supabase.from('rides' as any).update({
@@ -149,48 +154,67 @@ export default function MyRideScreen() {
         setPendingTimedOut(false);
       }
     }, 60 * 1000);
-    return () => clearTimeout(timer);
+    return () => clearTimeout(t);
   }, [pendingTimedOut, ride]);
 
-  // Countdown timer
+  // Countdown
   useEffect(() => {
     if (pendingCountdownRef.current) { clearInterval(pendingCountdownRef.current); pendingCountdownRef.current = null; }
     setPendingSecondsLeft(null);
     if (ride?.status !== 'pending' || ride?.booking_type === 'full_day' || pendingTimedOut) return;
-    const TIMEOUT_MS = 3 * 60 * 1000;
-    const getRemaining = () => {
+    const MS = 3 * 60 * 1000;
+    const getLeft = () => {
       const elapsed = ride.created_at ? Date.now() - new Date(ride.created_at).getTime() : 0;
-      return Math.max(0, Math.floor((TIMEOUT_MS - elapsed) / 1000));
+      return Math.max(0, Math.floor((MS - elapsed) / 1000));
     };
-    setPendingSecondsLeft(getRemaining());
+    setPendingSecondsLeft(getLeft());
     pendingCountdownRef.current = setInterval(() => {
-      const r = getRemaining();
+      const r = getLeft();
       setPendingSecondsLeft(r);
       if (r <= 0) { clearInterval(pendingCountdownRef.current!); pendingCountdownRef.current = null; }
     }, 1000);
     return () => { if (pendingCountdownRef.current) clearInterval(pendingCountdownRef.current); };
   }, [ride?.id, ride?.status, ride?.booking_type, ride?.created_at, pendingTimedOut]);
 
+  // ── Cancel ride ───────────────────────────────────────────────────────────
   const handleCancelRide = async () => {
     if (!ride) return;
-    Alert.alert('Cancel Ride', 'Are you sure you want to cancel?', [
-      { text: 'No', style: 'cancel' },
-      {
-        text: 'Yes, Cancel',
-        style: 'destructive',
-        onPress: async () => {
-          await supabase.from('rides' as any).update({
-            status: 'cancelled',
-            cancelled_at: new Date().toISOString(),
-            cancellation_reason: 'Cancelled by passenger',
-          } as any).eq('id', ride.id);
-          activeRideIdRef.current = null;
-          completionFlowStarted.current = false;
-          setRide(null);
-          setPendingTimedOut(false);
-        },
-      },
-    ]);
+    setCancelling(true);
+    await supabase.from('rides' as any).update({
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      cancellation_reason: 'Cancelled by passenger',
+    } as any).eq('id', ride.id);
+    activeRideIdRef.current = null;
+    completionFlowStarted.current = false;
+    setRide(null);
+    setPendingTimedOut(false);
+    setCancelling(false);
+  };
+
+  // Force-clear any stuck active rides (shown on "No Active Ride" screen)
+  const handleClearStuck = async () => {
+    if (!user) return;
+    setClearingStuck(true);
+    const { data } = await supabase
+      .from('rides' as any)
+      .select('id')
+      .eq('passenger_id', user.id)
+      .in('status', ['pending', 'matched', 'arrived', 'in_progress'])
+      .order('created_at', { ascending: false }) as any;
+
+    if (data && data.length > 0) {
+      for (const r of data) {
+        await supabase.from('rides' as any).update({
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          cancellation_reason: 'Force-cleared by passenger',
+        } as any).eq('id', r.id);
+      }
+    }
+    setStuckRideId(null);
+    setClearingStuck(false);
+    fetchActiveRide();
   };
 
   const handleTryAgain = async () => {
@@ -200,32 +224,17 @@ export default function MyRideScreen() {
       cancelled_at: new Date().toISOString(),
       cancellation_reason: 'No driver — passenger retried',
     } as any).eq('id', ride.id);
-
     const { data: created, error } = await supabase.from('rides' as any).insert({
       passenger_id: ride.passenger_id,
-      pickup_address: ride.pickup_address,
-      pickup_lat: ride.pickup_lat,
-      pickup_lng: ride.pickup_lng,
-      destination_address: ride.destination_address,
-      destination_lat: ride.destination_lat,
-      destination_lng: ride.destination_lng,
-      distance_km: ride.distance_km,
-      duration_minutes: ride.duration_minutes,
-      estimated_fare: ride.estimated_fare,
-      offered_fare: ride.offered_fare,
-      vehicle_type: ride.vehicle_type,
-      ride_type: ride.ride_type,
-      booking_type: ride.booking_type,
-      hire_description: ride.hire_description,
-      group_size: ride.group_size,
-      payment_method: ride.payment_method,
-      status: 'pending',
+      pickup_address: ride.pickup_address, pickup_lat: ride.pickup_lat, pickup_lng: ride.pickup_lng,
+      destination_address: ride.destination_address, destination_lat: ride.destination_lat, destination_lng: ride.destination_lng,
+      distance_km: ride.distance_km, duration_minutes: ride.duration_minutes,
+      estimated_fare: ride.estimated_fare, offered_fare: ride.offered_fare,
+      vehicle_type: ride.vehicle_type, ride_type: ride.ride_type,
+      booking_type: ride.booking_type, hire_description: ride.hire_description,
+      group_size: ride.group_size, payment_method: ride.payment_method, status: 'pending',
     } as any).select().single() as any;
-
-    if (error) {
-      Alert.alert('Error', 'Could not retry. Please book again.');
-      setRide(null); setPendingTimedOut(false); return;
-    }
+    if (error) { setRide(null); setPendingTimedOut(false); return; }
     setPendingTimedOut(false);
     setRide(created as Ride);
     activeRideIdRef.current = created.id;
@@ -239,12 +248,6 @@ export default function MyRideScreen() {
     } else {
       await supabase.from('favorite_drivers' as any).insert({ passenger_id: user.id, driver_id: ride.driver_id } as any);
       setIsFavorite(true);
-      await supabase.from('notifications').insert({
-        user_id: ride.driver_id,
-        title: 'New Favorite!',
-        message: 'A passenger saved you as a favorite driver!',
-        type: 'favorite_added',
-      });
     }
   };
 
@@ -253,17 +256,10 @@ export default function MyRideScreen() {
     setSubmittingRating(true);
     await supabase.from('rides' as any).update({ driver_rating: rating, driver_review: review } as any).eq('id', ride.id);
     if (ride.driver_id) {
-      await supabase.from('ride_ratings').insert({
-        ride_id: ride.id,
-        rater_id: user!.id,
-        rated_id: ride.driver_id,
-        rating,
-        review,
-        rated_as: 'driver',
-      });
-      const { data: allRatings } = await supabase.from('ride_ratings').select('rating').eq('rated_id', ride.driver_id).eq('rated_as', 'driver');
-      if (allRatings && allRatings.length > 0) {
-        const avg = allRatings.reduce((s, r) => s + r.rating, 0) / allRatings.length;
+      await supabase.from('ride_ratings').insert({ ride_id: ride.id, rater_id: user!.id, rated_id: ride.driver_id, rating, review, rated_as: 'driver' });
+      const { data: all } = await supabase.from('ride_ratings').select('rating').eq('rated_id', ride.driver_id).eq('rated_as', 'driver');
+      if (all && all.length > 0) {
+        const avg = all.reduce((s: number, r: any) => s + r.rating, 0) / all.length;
         await supabase.from('driver_profiles' as any).update({ average_rating: parseFloat(avg.toFixed(2)) } as any).eq('user_id', ride.driver_id);
       }
     }
@@ -273,6 +269,21 @@ export default function MyRideScreen() {
     setShowRating(false);
   };
 
+  // ── Cancel button (shared across states) ────────────────────────────────
+  const CancelBtn = ({ label = 'Cancel Ride' }: { label?: string }) => (
+    <TouchableOpacity
+      style={[styles.cancelBtn, cancelling && { opacity: 0.5 }]}
+      onPress={handleCancelRide}
+      disabled={cancelling}
+    >
+      {cancelling
+        ? <ActivityIndicator color="#ef4444" size="small" />
+        : <Text style={styles.cancelBtnText}>{label}</Text>
+      }
+    </TouchableOpacity>
+  );
+
+  // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
@@ -281,34 +292,50 @@ export default function MyRideScreen() {
     );
   }
 
-  // Driver cancelled
+  // ── Driver cancelled ──────────────────────────────────────────────────────
   if (driverCancelledRide) {
     return (
       <SafeAreaView style={styles.center}>
         <Text style={styles.bigIcon}>😔</Text>
         <Text style={styles.bigTitle}>Your driver cancelled</Text>
         <Text style={styles.subText}>We're sorry for the inconvenience.</Text>
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.outlineBtn} onPress={() => setDriverCancelledRide(null)}>
-            <Text style={styles.outlineBtnText}>Dismiss</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.navyBtn} onPress={() => setDriverCancelledRide(null)}>
+          <Text style={styles.navyBtnText}>Dismiss</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  // No active ride
+  // ── No active ride ────────────────────────────────────────────────────────
   if (!ride) {
     return (
       <SafeAreaView style={styles.center}>
         <Text style={styles.bigIcon}>🛺</Text>
         <Text style={styles.bigTitle}>No Active Ride</Text>
         <Text style={styles.subText}>Book a ride from the Book tab to get started.</Text>
+        <TouchableOpacity style={styles.navyBtn} onPress={() => router.replace('/(tabs)')}>
+          <Text style={styles.navyBtnText}>Book a Ride →</Text>
+        </TouchableOpacity>
+
+        {/* Force-clear helper — if booking says "active ride exists" but nothing shows here */}
+        <TouchableOpacity
+          style={[styles.clearStuckBtn, clearingStuck && { opacity: 0.5 }]}
+          onPress={handleClearStuck}
+          disabled={clearingStuck}
+        >
+          {clearingStuck
+            ? <ActivityIndicator color="#6b7280" size="small" />
+            : <Text style={styles.clearStuckText}>🔧 Clear any stuck rides</Text>
+          }
+        </TouchableOpacity>
+        <Text style={styles.clearStuckHint}>
+          Use this if booking says you have an active ride but nothing appears here.
+        </Text>
       </SafeAreaView>
     );
   }
 
-  // Pending
+  // ── Pending ───────────────────────────────────────────────────────────────
   if (ride.status === 'pending') {
     const isFullDay = ride.booking_type === 'full_day';
 
@@ -316,14 +343,12 @@ export default function MyRideScreen() {
       return (
         <SafeAreaView style={styles.center}>
           <Text style={styles.bigIcon}>⏰</Text>
-          <Text style={styles.bigTitle}>No drivers nearby</Text>
+          <Text style={styles.bigTitle}>No drivers nearby right now</Text>
           <Text style={styles.subText}>Try again in a few minutes.</Text>
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.outlineBtn} onPress={handleCancelRide}>
-              <Text style={styles.outlineBtnText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleTryAgain}>
-              <Text style={styles.primaryBtnText}>Try Again</Text>
+            <CancelBtn label="Cancel" />
+            <TouchableOpacity style={styles.navyBtn} onPress={handleTryAgain}>
+              <Text style={styles.navyBtnText}>Try Again</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -332,58 +357,60 @@ export default function MyRideScreen() {
 
     return (
       <SafeAreaView style={styles.center}>
-        <View style={styles.pingOuter}>
-          <View style={styles.pingInner}>
+        {/* Pulsing ring */}
+        <View style={styles.pulseWrap}>
+          <View style={styles.pulseRing} />
+          <View style={styles.pulseInner}>
             <ActivityIndicator size="large" color="#1A2744" />
           </View>
         </View>
+
         <Text style={styles.bigTitle}>
-          {isFullDay ? 'Looking for a driver to accept your offer...' : 'Looking for a driver...'}
+          {isFullDay ? 'Looking for a driver for your offer…' : 'Looking for a driver…'}
         </Text>
+
         {pendingSecondsLeft !== null && !isFullDay && (
           <Text style={[
             styles.countdown,
-            pendingSecondsLeft <= 30 ? styles.countdownRed : pendingSecondsLeft <= 60 ? styles.countdownAmber : styles.countdownGray
+            pendingSecondsLeft <= 30 ? { color: '#ef4444' } :
+            pendingSecondsLeft <= 60 ? { color: '#f59e0b' } : { color: '#6b7280' },
           ]}>
             {pendingSecondsLeft <= 10
-              ? 'Ride cancelling soon...'
+              ? 'Cancelling soon…'
               : `${Math.floor(pendingSecondsLeft / 60)}:${String(pendingSecondsLeft % 60).padStart(2, '0')} remaining`}
           </Text>
         )}
+
+        {/* Ride summary */}
         <View style={styles.rideCard}>
-          <View style={styles.cardRow}><Text style={styles.cardIcon}>📍</Text><Text style={styles.cardText} numberOfLines={1}>{ride.pickup_address}</Text></View>
-          {!isFullDay && ride.destination_address && (
-            <View style={styles.cardRow}><Text style={styles.cardIcon}>🏁</Text><Text style={styles.cardText} numberOfLines={1}>{ride.destination_address}</Text></View>
-          )}
-          {isFullDay && ride.hire_description && (
-            <Text style={styles.cardMeta}>{ride.hire_description}</Text>
-          )}
-          <View style={[styles.cardRow, styles.cardRowBorder]}>
+          <RideRow icon="📍" text={ride.pickup_address || 'Pickup'} />
+          {!isFullDay && <RideRow icon="🏁" text={ride.destination_address || 'Destination'} />}
+          {isFullDay && ride.hire_description && <Text style={styles.cardMeta}>{ride.hire_description}</Text>}
+          <View style={[styles.cardRow, { justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 8, marginTop: 4 }]}>
             <Text style={styles.cardMeta}>{ride.vehicle_type}</Text>
-            <Text style={styles.cardFare}>${(isFullDay ? ride.offered_fare : ride.estimated_fare)?.toFixed(2)}</Text>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: '#1A2744' }}>
+              ${(isFullDay ? ride.offered_fare : ride.estimated_fare)?.toFixed(2)}
+            </Text>
           </View>
         </View>
-        <TouchableOpacity style={[styles.outlineBtn, { marginTop: 16, borderColor: '#ef4444' }]} onPress={handleCancelRide}>
-          <Text style={[styles.outlineBtnText, { color: '#ef4444' }]}>Cancel Ride</Text>
-        </TouchableOpacity>
+
+        <CancelBtn />
       </SafeAreaView>
     );
   }
 
-  // Matched / Arrived
+  // ── Matched / Arrived ─────────────────────────────────────────────────────
   if (ride.status === 'matched' || ride.status === 'arrived') {
     const fareDisplay = ride.booking_type === 'full_day'
       ? (ride.agreed_price || ride.offered_fare)
       : ride.estimated_fare;
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-        <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
-          <View style={[
-            styles.etaBanner,
-            ride.status === 'arrived' ? styles.etaBannerArrived : styles.etaBannerOnWay
-          ]}>
-            <Text style={styles.etaText}>
-              {ride.status === 'arrived' ? '✅ Your driver has arrived' : '🛺 Driver on the way…'}
+        <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }}>
+          {/* ETA banner */}
+          <View style={ride.status === 'arrived' ? styles.bannerGreen : styles.bannerBlue}>
+            <Text style={styles.bannerText}>
+              {ride.status === 'arrived' ? '✅ Your driver has arrived!' : '🛺 Driver on the way…'}
             </Text>
           </View>
 
@@ -391,87 +418,71 @@ export default function MyRideScreen() {
             {ride.status === 'matched' ? 'Driver Found!' : 'Driver Arrived!'}
           </Text>
 
+          {/* Driver card */}
           <View style={styles.driverCard}>
-            <View style={styles.driverAvatar}>
-              <Text style={styles.driverInitial}>{driverName.charAt(0).toUpperCase()}</Text>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{driverName.charAt(0).toUpperCase() || '?'}</Text>
             </View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.driverName}>{driverName}</Text>
+                <Text style={styles.driverName}>{driverName || 'Your Driver'}</Text>
                 <TouchableOpacity onPress={toggleFavorite}>
-                  <Text style={styles.heartIcon}>{isFavorite ? '❤️' : '🤍'}</Text>
+                  <Text style={{ fontSize: 18 }}>{isFavorite ? '❤️' : '🤍'}</Text>
                 </TouchableOpacity>
               </View>
               {driverProfile && (
-                <>
-                  <Text style={styles.driverVehicle}>
-                    {driverProfile.vehicle_color} {driverProfile.vehicle_brand} · {driverProfile.plate_number}
-                  </Text>
-                  <View style={styles.badgeRow}>
-                    {driverProfile.is_id_verified && <Text style={styles.badge}>✓ ID Verified</Text>}
-                    {driverProfile.speaks_english && <Text style={styles.badgeBlue}>🗣 English</Text>}
-                    {driverProfile.tourist_friendly && <Text style={styles.badgePurple}>🌍 Tourist Friendly</Text>}
-                  </View>
-                </>
+                <Text style={styles.driverVehicle}>
+                  {driverProfile.vehicle_color} {driverProfile.vehicle_brand} · {driverProfile.plate_number}
+                </Text>
               )}
-              <Text style={styles.driverStatus}>
-                {ride.status === 'matched' ? 'On the way to you...' : 'Waiting at pickup location'}
+              <Text style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
+                {ride.status === 'matched' ? 'On the way to you…' : 'Waiting at pickup location'}
               </Text>
             </View>
           </View>
 
-          <View style={styles.rideInfoCard}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Distance</Text>
-              <Text style={styles.infoValue}>{ride.distance_km?.toFixed(1)} km</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Duration</Text>
-              <Text style={styles.infoValue}>{ride.duration_minutes} min</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Fare</Text>
-              <Text style={[styles.infoValue, { fontWeight: '700', color: '#1A2744' }]}>{formatDualCurrency(fareDisplay ?? 0)}</Text>
-            </View>
+          {/* Fare */}
+          <View style={styles.infoCard}>
+            <InfoRow label="Distance" value={`${ride.distance_km?.toFixed(1)} km`} />
+            <InfoRow label="Duration" value={`${ride.duration_minutes} min`} />
+            <InfoRow label="Fare" value={formatDualCurrency(fareDisplay ?? 0)} bold />
+            <InfoRow label="Payment" value={ride.payment_method ?? 'cash'} />
           </View>
 
-          <TouchableOpacity
-            style={[styles.outlineBtn, { borderColor: '#ef4444', alignSelf: 'stretch' }]}
-            onPress={handleCancelRide}
-          >
-            <Text style={[styles.outlineBtnText, { color: '#ef4444' }]}>Cancel Ride</Text>
-          </TouchableOpacity>
+          <CancelBtn />
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  // In progress
+  // ── In progress ───────────────────────────────────────────────────────────
   if (ride.status === 'in_progress') {
     const fareDisplay = ride.booking_type === 'full_day'
       ? (ride.agreed_price || ride.offered_fare)
       : ride.estimated_fare;
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-        <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
-          <View style={styles.etaBannerOnWay}>
-            <Text style={styles.etaText}>🚗 On your way to destination</Text>
+        <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }}>
+          <View style={styles.bannerBlue}>
+            <Text style={styles.bannerText}>🚗 Ride in progress</Text>
           </View>
-          <View style={styles.inProgressPill}>
+
+          <View style={[styles.inProgressPill, { alignSelf: 'flex-start' }]}>
             <Text style={styles.inProgressText}>
-              {ride.booking_type === 'full_day' ? 'Full Day Hire In Progress' : 'Ride in Progress'}
+              {ride.booking_type === 'full_day' ? 'Full Day Hire In Progress' : 'On Your Way'}
             </Text>
           </View>
+
           {driverProfile && (
             <View style={styles.driverCard}>
-              <View style={styles.driverAvatar}>
-                <Text style={styles.driverInitial}>{driverName.charAt(0).toUpperCase()}</Text>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{driverName.charAt(0).toUpperCase() || '?'}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Text style={styles.driverName}>{driverName}</Text>
                   <TouchableOpacity onPress={toggleFavorite}>
-                    <Text style={styles.heartIcon}>{isFavorite ? '❤️' : '🤍'}</Text>
+                    <Text style={{ fontSize: 18 }}>{isFavorite ? '❤️' : '🤍'}</Text>
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.driverVehicle}>
@@ -480,57 +491,36 @@ export default function MyRideScreen() {
               </View>
             </View>
           )}
-          <View style={styles.rideInfoCard}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Fare</Text>
-              <Text style={[styles.infoValue, { fontWeight: '700', color: '#1A2744' }]}>{formatDualCurrency(fareDisplay ?? 0)}</Text>
-            </View>
+
+          <View style={styles.infoCard}>
+            <InfoRow label="Fare" value={formatDualCurrency(fareDisplay ?? 0)} bold />
+            <InfoRow label="Payment" value={ride.payment_method ?? 'cash'} />
           </View>
+
+          {/* Cancel is intentionally available even in_progress (emergency) */}
+          <CancelBtn label="Cancel Ride (Emergency)" />
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  // Completed — Rating flow
+  // ── Completed ─────────────────────────────────────────────────────────────
   if (ride.status === 'completed') {
     if (!showRating) {
       return (
         <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-          <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
-            <Text style={styles.statusTitle}>🎉 Ride Completed!</Text>
-            <View style={styles.rideInfoCard}>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Pickup</Text>
-                <Text style={styles.infoValue} numberOfLines={2}>{ride.pickup_address}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Destination</Text>
-                <Text style={styles.infoValue} numberOfLines={2}>{ride.destination_address}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Distance</Text>
-                <Text style={styles.infoValue}>{ride.distance_km?.toFixed(1)} km</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Final Fare</Text>
-                <Text style={[styles.infoValue, { fontWeight: '700', color: '#1A2744' }]}>
-                  {formatDualCurrency(ride.final_fare || ride.estimated_fare || 0)}
-                </Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Payment</Text>
-                <Text style={styles.infoValue}>{ride.payment_method}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Driver</Text>
-                <Text style={styles.infoValue}>{driverName}</Text>
-              </View>
+          <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }}>
+            <Text style={[styles.statusTitle, { fontSize: 22 }]}>🎉 Ride Completed!</Text>
+            <View style={styles.infoCard}>
+              <InfoRow label="Pickup"      value={ride.pickup_address || '—'} />
+              <InfoRow label="Destination" value={ride.destination_address || '—'} />
+              <InfoRow label="Distance"    value={`${ride.distance_km?.toFixed(1)} km`} />
+              <InfoRow label="Final Fare"  value={formatDualCurrency(ride.final_fare || ride.estimated_fare || 0)} bold />
+              <InfoRow label="Payment"     value={ride.payment_method || '—'} />
+              <InfoRow label="Driver"      value={driverName || '—'} />
             </View>
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => setShowRating(true)}
-            >
-              <Text style={styles.primaryBtnText}>Rate Your Driver</Text>
+            <TouchableOpacity style={styles.navyBtn} onPress={() => setShowRating(true)}>
+              <Text style={styles.navyBtnText}>Rate Your Driver ★</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.outlineBtn}
@@ -547,33 +537,34 @@ export default function MyRideScreen() {
       <SafeAreaView style={styles.center}>
         <Text style={styles.bigTitle}>Rate Your Driver 🎉</Text>
         <Text style={styles.subText}>How was your ride with {driverName}?</Text>
-        <View style={styles.starsRow}>
+        <View style={{ flexDirection: 'row', gap: 8, marginVertical: 16 }}>
           {[1, 2, 3, 4, 5].map(s => (
             <TouchableOpacity key={s} onPress={() => setRating(s)}>
-              <Text style={[styles.star, s <= rating && styles.starActive]}>★</Text>
+              <Text style={{ fontSize: 40, color: s <= rating ? '#f59e0b' : '#d1d5db' }}>★</Text>
             </TouchableOpacity>
           ))}
         </View>
         <TextInput
           style={styles.reviewInput}
-          placeholder="Optional comment..."
+          placeholder="Optional comment…"
           placeholderTextColor="#9ca3af"
           value={review}
           onChangeText={setReview}
           multiline
         />
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.outlineBtn} onPress={() => { completionFlowStarted.current = false; setRide(null); setShowRating(false); }}>
+          <TouchableOpacity style={styles.outlineBtn}
+            onPress={() => { completionFlowStarted.current = false; setRide(null); setShowRating(false); }}>
             <Text style={styles.outlineBtnText}>Skip</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.primaryBtn, (rating === 0 || submittingRating) && styles.btnDisabled]}
+            style={[styles.navyBtn, (rating === 0 || submittingRating) && { opacity: 0.5 }]}
             disabled={rating === 0 || submittingRating}
             onPress={handleSubmitRating}
           >
             {submittingRating
               ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={styles.primaryBtnText}>Submit Rating</Text>
+              : <Text style={styles.navyBtnText}>Submit Rating</Text>
             }
           </TouchableOpacity>
         </View>
@@ -584,54 +575,85 @@ export default function MyRideScreen() {
   return null;
 }
 
+// ── Small helpers ─────────────────────────────────────────────────────────────
+function RideRow({ icon, text }: { icon: string; text: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+      <Text style={{ fontSize: 14 }}>{icon}</Text>
+      <Text style={{ flex: 1, fontSize: 13, color: '#374151' }} numberOfLines={1}>{text}</Text>
+    </View>
+  );
+}
+
+function InfoRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
+      <Text style={{ fontSize: 13, color: '#6b7280' }}>{label}</Text>
+      <Text style={{ fontSize: 13, color: bold ? '#1A2744' : '#111', fontWeight: bold ? '700' : '500', maxWidth: '60%', textAlign: 'right' }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
   bigIcon: { fontSize: 56, marginBottom: 12 },
   bigTitle: { fontSize: 20, fontWeight: '700', color: '#111', textAlign: 'center', marginBottom: 8 },
   subText: { fontSize: 14, color: '#6b7280', textAlign: 'center', marginBottom: 20 },
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
-  outlineBtn: { borderWidth: 2, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 12, alignItems: 'center' },
+
+  // Cancel — always red, always visible
+  cancelBtn: {
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginTop: 16,
+    width: '100%',
+    maxWidth: 380,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  cancelBtnText: { color: '#ef4444', fontWeight: '700', fontSize: 15 },
+
+  // Force clear
+  clearStuckBtn: { marginTop: 20, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8, borderWidth: 1, borderColor: '#d1d5db', alignItems: 'center' },
+  clearStuckText: { color: '#6b7280', fontSize: 13, fontWeight: '600' },
+  clearStuckHint: { fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: 6, maxWidth: 300 },
+
+  navyBtn: { backgroundColor: '#1A2744', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 13, alignItems: 'center' },
+  navyBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  outlineBtn: { borderWidth: 2, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 13, alignItems: 'center' },
   outlineBtnText: { color: '#374151', fontWeight: '600', fontSize: 14 },
-  primaryBtn: { backgroundColor: '#1A2744', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 12, alignItems: 'center' },
-  primaryBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  btnDisabled: { opacity: 0.5 },
-  pingOuter: { width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: 'rgba(26,39,68,0.3)', marginBottom: 24, alignItems: 'center', justifyContent: 'center' },
-  pingInner: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(26,39,68,0.1)', alignItems: 'center', justifyContent: 'center' },
+
+  // Pending
+  pulseWrap: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
+  pulseRing: { position: 'absolute', width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: 'rgba(26,39,68,0.25)' },
+  pulseInner: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(26,39,68,0.08)', alignItems: 'center', justifyContent: 'center' },
   countdown: { fontSize: 14, fontWeight: '600', marginBottom: 16 },
-  countdownRed: { color: '#ef4444' },
-  countdownAmber: { color: '#f59e0b' },
-  countdownGray: { color: '#6b7280' },
-  rideCard: { width: '100%', maxWidth: 380, backgroundColor: '#f9fafb', borderRadius: 12, padding: 16, gap: 8, borderWidth: 1, borderColor: '#e5e7eb' },
+  rideCard: { width: '100%', maxWidth: 380, backgroundColor: '#f9fafb', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#e5e7eb' },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardRowBorder: { borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 8, justifyContent: 'space-between' },
-  cardIcon: { fontSize: 14 },
-  cardText: { flex: 1, fontSize: 13, color: '#374151' },
   cardMeta: { fontSize: 12, color: '#6b7280' },
-  cardFare: { fontSize: 14, fontWeight: '700', color: '#1A2744' },
-  etaBanner: { borderRadius: 12, padding: 14, alignItems: 'center' },
-  etaBannerOnWay: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, padding: 14, alignItems: 'center' },
-  etaBannerArrived: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#86efac', borderRadius: 12, padding: 14, alignItems: 'center' },
-  etaText: { fontSize: 14, fontWeight: '600', color: '#1e40af' },
+
+  // Active ride screens
+  bannerBlue: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, padding: 14, alignItems: 'center' },
+  bannerGreen: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#86efac', borderRadius: 12, padding: 14, alignItems: 'center' },
+  bannerText: { fontSize: 14, fontWeight: '600', color: '#1e40af' },
   statusTitle: { fontSize: 20, fontWeight: '700', color: '#111' },
   driverCard: { flexDirection: 'row', gap: 14, alignItems: 'flex-start', backgroundColor: '#f9fafb', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#e5e7eb' },
-  driverAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#1A2744', alignItems: 'center', justifyContent: 'center' },
-  driverInitial: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#1A2744', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontSize: 20, fontWeight: '700' },
   driverName: { fontSize: 16, fontWeight: '700', color: '#111' },
   driverVehicle: { fontSize: 13, color: '#6b7280', marginTop: 2 },
-  driverStatus: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
-  heartIcon: { fontSize: 18 },
-  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
-  badge: { fontSize: 11, color: '#166534', backgroundColor: '#dcfce7', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeBlue: { fontSize: 11, color: '#1d4ed8', backgroundColor: '#dbeafe', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
-  badgePurple: { fontSize: 11, color: '#6d28d9', backgroundColor: '#ede9fe', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
-  rideInfoCard: { backgroundColor: '#f9fafb', borderRadius: 12, padding: 16, gap: 10, borderWidth: 1, borderColor: '#e5e7eb' },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  infoLabel: { fontSize: 13, color: '#6b7280', flex: 1 },
-  infoValue: { fontSize: 13, color: '#111', flex: 2, textAlign: 'right' },
-  inProgressPill: { backgroundColor: '#1A2744', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, alignSelf: 'flex-start' },
+  infoCard: { backgroundColor: '#f9fafb', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#e5e7eb' },
+  inProgressPill: { backgroundColor: '#1A2744', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
   inProgressText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  starsRow: { flexDirection: 'row', gap: 8, marginVertical: 16 },
-  star: { fontSize: 40, color: '#d1d5db' },
-  starActive: { color: '#f59e0b' },
+
+  // Rating
   reviewInput: { width: '100%', maxWidth: 380, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, padding: 12, fontSize: 14, color: '#111', minHeight: 80, textAlignVertical: 'top', marginBottom: 16 },
 });
