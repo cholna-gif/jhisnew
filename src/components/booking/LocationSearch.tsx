@@ -9,9 +9,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   FlatList,
   StyleSheet,
   ActivityIndicator,
+  Dimensions,
   Platform,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
@@ -60,6 +62,8 @@ export default function LocationSearch({
   const [showDropdown, setShowDropdown] = useState(false);
   const inputRef   = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { width: SW, height: SH } = Dimensions.get('window');
 
   // ── Photon autocomplete ───────────────────────────────────────────────────
   const search = useCallback(async (text: string) => {
@@ -119,18 +123,14 @@ export default function LocationSearch({
     else search(value);
   };
 
-  const handleBlur = () => {
-    // Delay so tap on suggestion registers first
-    setTimeout(() => {
-      setFocused(false);
-      setShowDropdown(false);
-    }, 180);
+  const closeDropdown = () => {
+    setFocused(false);
+    setShowDropdown(false);
+    inputRef.current?.blur();
   };
 
   const handleSelect = (item: Suggestion) => {
-    setShowDropdown(false);
-    setFocused(false);
-    inputRef.current?.blur();
+    closeDropdown();
     onChange(item.name);
     onSelect({ lat: item.lat, lng: item.lng, address: `${item.name}, ${item.sub}` });
   };
@@ -146,6 +146,27 @@ export default function LocationSearch({
 
   return (
     <View style={styles.wrapper}>
+
+      {/* ── Full-screen backdrop ─────────────────────────────────────────────
+          Absolutely positioned far outside the component bounds so it covers
+          the entire screen. React Native does NOT clip absolute children by
+          default, so touches on the map / empty area all hit this Pressable.
+          zIndex sits between the rest of the UI (< 998) and the dropdown (999).
+      ── */}
+      {dropdownVisible && (
+        <Pressable
+          style={{
+            position: 'absolute',
+            top: -SH,
+            left: -SW,
+            width: SW * 3,
+            height: SH * 3,
+            zIndex: 998,
+          }}
+          onPress={closeDropdown}
+        />
+      )}
+
       {/* ── Input row ── */}
       <View style={[styles.inputRow, focused && styles.inputRowFocused]}>
         <SymbolView name="location.fill" style={styles.pinIcon} tintColor="rgba(255,255,255,0.55)" resizeMode="scaleAspectFit" />
@@ -157,7 +178,6 @@ export default function LocationSearch({
           value={value}
           onChangeText={handleChange}
           onFocus={handleFocus}
-          onBlur={handleBlur}
           returnKeyType="search"
           autoCorrect={false}
           autoCapitalize="none"
@@ -179,12 +199,12 @@ export default function LocationSearch({
         )}
       </View>
 
-      {/* ── Dropdown ── */}
+      {/* ── Dropdown (zIndex: 999 — above the backdrop) ── */}
       {dropdownVisible && (
         <View style={styles.dropdown}>
           {/* GPS shortcut row */}
           {showGps && onGps && (
-            <TouchableOpacity style={styles.gpsRow} onPress={() => { setShowDropdown(false); onGps(); }}>
+            <TouchableOpacity style={styles.gpsRow} onPress={() => { closeDropdown(); onGps(); }}>
               <View style={[styles.iconBox, { backgroundColor: 'rgba(212,175,55,0.15)' }]}>
                 <SymbolView name="location.circle.fill" style={styles.iconBoxSymbol} tintColor="#D4AF37" resizeMode="scaleAspectFit" />
               </View>
@@ -195,7 +215,7 @@ export default function LocationSearch({
             </TouchableOpacity>
           )}
 
-          {/* Divider when showing popular */}
+          {/* Section label for popular places */}
           {value.trim().length < 2 && (
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderText}>Popular places</Text>
@@ -216,9 +236,9 @@ export default function LocationSearch({
               >
                 <View style={styles.iconBox}>
                   <SymbolView
-                    name={value.trim().length < 2 ? 'star.fill' : 'location.fill'}
+                    name="location.fill"
                     style={styles.iconBoxSymbol}
-                    tintColor={value.trim().length < 2 ? '#D4AF37' : 'rgba(255,255,255,0.7)'}
+                    tintColor="rgba(255,255,255,0.6)"
                     resizeMode="scaleAspectFit"
                   />
                 </View>
@@ -277,7 +297,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(212,175,55,0.4)',
   },
-  gpsIcon: { color: '#D4AF37', fontSize: 16, lineHeight: 20 },
 
   // ── Dropdown ──
   dropdown: {
@@ -324,7 +343,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  // Suggestion row
+  // Suggestion rows
   suggRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -340,7 +359,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   },
-  iconBoxText: { fontSize: 16 },
   suggName: {
     fontSize: 14,
     color: '#fff',
