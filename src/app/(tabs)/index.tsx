@@ -573,6 +573,45 @@ export default function BookScreen() {
           stops={stops.filter(s => s.lat !== 0)}
           onMapPress={handleMapPress} routeCoords={routeCoords} />
 
+        {/* ── Map pin mode bar — visible until both points are set ── */}
+        {(!pickup || !destination) && (
+          <View style={styles.mapModeBar}>
+            <TouchableOpacity
+              style={[styles.mapModeBtn, settingField === 'pickup' && styles.mapModeBtnActive]}
+              onPress={() => setSettingField('pickup')}
+            >
+              <View style={[styles.mapModeDot, { backgroundColor: '#22c55e' }]} />
+              <Text style={[styles.mapModeBtnText, settingField === 'pickup' && styles.mapModeBtnTextActive]}>
+                {pickup ? '✓ Pickup set' : 'Tap to set Pickup'}
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.mapModeDivider} />
+            <TouchableOpacity
+              style={[styles.mapModeBtn, settingField === 'destination' && styles.mapModeBtnActive]}
+              onPress={() => setSettingField('destination')}
+            >
+              <View style={[styles.mapModeDot, { backgroundColor: '#ef4444' }]} />
+              <Text style={[styles.mapModeBtnText, settingField === 'destination' && styles.mapModeBtnTextActive]}>
+                {destination ? '✓ Destination set' : 'Tap to set Destination'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── Crosshair — shows where tap will land, non-interactive ── */}
+        {(!pickup || !destination) && (
+          <View style={styles.crosshairWrap} pointerEvents="none">
+            <View style={styles.crosshairRing}>
+              <SymbolView
+                name="plus"
+                style={{ width: 20, height: 20 }}
+                tintColor={settingField === 'pickup' ? '#22c55e' : '#ef4444'}
+                resizeMode="scaleAspectFit"
+              />
+            </View>
+          </View>
+        )}
+
         {panelOpen && pickup && destination && (
           <View style={styles.bottomPanel}>
             <View style={styles.panelHandle} />
@@ -625,15 +664,6 @@ export default function BookScreen() {
           </View>
         )}
 
-        {(!panelOpen || !pickup || !destination) && (
-          <View style={styles.preRouteCta}>
-            <View style={{ backgroundColor: 'rgba(212,175,55,0.25)', borderRadius: 12, padding: 18, alignItems: 'center' }}>
-              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14, opacity: 0.7 }}>
-                Set pickup &amp; destination to continue →
-              </Text>
-            </View>
-          </View>
-        )}
       </View>
     </SafeAreaView>
   );
@@ -682,6 +712,19 @@ const styles = StyleSheet.create({
   paymentBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: '#1A2744', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 },
   paymentBtnActive: { borderColor: '#D4AF37', backgroundColor: 'rgba(212,175,55,0.15)' },
   preRouteCta: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12, backgroundColor: '#1A2744', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' },
+
+  // ── Map pin mode bar ──
+  mapModeBar: { position: 'absolute', top: 10, left: 12, right: 12, flexDirection: 'row', backgroundColor: 'rgba(26,39,68,0.92)', borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  mapModeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 11, paddingHorizontal: 12 },
+  mapModeBtnActive: { backgroundColor: 'rgba(212,175,55,0.15)' },
+  mapModeDot: { width: 9, height: 9, borderRadius: 5, flexShrink: 0 },
+  mapModeBtnText: { fontSize: 12, fontWeight: '500', color: 'rgba(255,255,255,0.55)', flexShrink: 1 },
+  mapModeBtnTextActive: { color: '#fff', fontWeight: '700' },
+  mapModeDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginVertical: 8 },
+
+  // ── Crosshair ──
+  crosshairWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  crosshairRing: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(26,39,68,0.35)', alignItems: 'center', justifyContent: 'center' },
 
   // confirm
   confirmHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -36,6 +36,7 @@ export default function MyRideScreen() {
 
   const activeRideIdRef       = useRef<string | null>(null);
   const completionFlowStarted = useRef(false);
+  const lastKnownStatusRef    = useRef<string | null>(null);
   const pendingTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCountdownRef   = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -56,28 +57,46 @@ export default function MyRideScreen() {
     if (activeRide?.status === 'completed') {
       if (completionFlowStarted.current || activeRideIdRef.current === activeRide.id) {
         completionFlowStarted.current = true;
+        lastKnownStatusRef.current = 'completed';
         setRide(activeRide);
       }
     } else if (completionFlowStarted.current) {
       // keep post-ride flow
     } else if (!activeRide) {
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      const { data: cd } = await supabase
-        .from('rides' as any)
-        .select('*')
-        .eq('passenger_id', user.id)
-        .eq('status', 'cancelled')
-        .eq('cancelled_by', 'driver')
-        .gte('cancelled_at', tenMinutesAgo)
-        .order('cancelled_at', { ascending: false })
-        .limit(1) as any;
-      setDriverCancelledRide((cd as Ride[])?.[0] || null);
+      // Active ride disappeared — look up the exact ride we were tracking
+      const knownId     = activeRideIdRef.current;
+      const wasMatched  = ['matched', 'arrived', 'in_progress'].includes(lastKnownStatusRef.current ?? '');
+
+      if (knownId && wasMatched) {
+        // Query the specific ride by ID — it may now be cancelled
+        const { data: gone } = await supabase
+          .from('rides' as any)
+          .select('*')
+          .eq('id', knownId)
+          .maybeSingle() as any;
+
+        const cancelledRide = gone as Ride | null;
+        const byPassenger   = cancelledRide?.cancellation_reason?.toLowerCase().includes('passenger');
+
+        if (cancelledRide?.status === 'cancelled' && !byPassenger) {
+          setDriverCancelledRide(cancelledRide);
+        } else if (!cancelledRide || (cancelledRide.status === 'cancelled' && !byPassenger)) {
+          // Ride vanished with no record — still a driver cancellation
+          setDriverCancelledRide({ id: knownId, status: 'cancelled' } as Ride);
+        } else {
+          setDriverCancelledRide(null);
+        }
+      } else {
+        setDriverCancelledRide(null);
+      }
       setRide(null);
       activeRideIdRef.current = null;
+      lastKnownStatusRef.current = null;
     } else {
       setDriverCancelledRide(null);
       setRide(activeRide);
       activeRideIdRef.current = activeRide.id;
+      lastKnownStatusRef.current = activeRide.status;
 
       if (activeRide.driver_id) {
         const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', activeRide.driver_id).maybeSingle();
@@ -215,13 +234,53 @@ export default function MyRideScreen() {
   if (loading) return <SafeAreaView style={styles.center}><ActivityIndicator size="large" color="#1A2744" /></SafeAreaView>;
 
   if (driverCancelledRide) {
+    const hasRoute = !!(driverCancelledRide.pickup_address && driverCancelledRide.destination_address);
+
+    const handleRebook = async () => {
+      if (!user || !hasRoute) { router.replace('/(tabs)'); return; }
+      const r = driverCancelledRide;
+      const { data: created, error } = await supabase.from('rides' as any).insert({
+        passenger_id: user.id,
+        pickup_address: r.pickup_address, pickup_lat: r.pickup_lat, pickup_lng: r.pickup_lng,
+        destination_address: r.destination_address, destination_lat: r.destination_lat, destination_lng: r.destination_lng,
+        distance_km: r.distance_km, duration_minutes: r.duration_minutes, estimated_fare: r.estimated_fare,
+        vehicle_type: r.vehicle_type, ride_type: r.ride_type ?? 'private', booking_type: r.booking_type ?? 'standard',
+        payment_method: r.payment_method ?? 'cash', status: 'pending',
+      } as any).select().single() as any;
+      if (!error) {
+        setDriverCancelledRide(null);
+        setRide(created as Ride);
+        activeRideIdRef.current = created.id;
+        lastKnownStatusRef.current = 'pending';
+      }
+    };
+
     return (
-      <SafeAreaView style={styles.center}>
-        <Text style={styles.bigIcon}>😔</Text>
-        <Text style={styles.bigTitle}>Your driver cancelled</Text>
-        <Text style={styles.subText}>We're sorry for the inconvenience.</Text>
-        <TouchableOpacity style={styles.navyBtn} onPress={() => setDriverCancelledRide(null)}>
-          <Text style={styles.navyBtnText}>Dismiss</Text>
+      <SafeAreaView style={[styles.center, { gap: 0 }]}>
+        <View style={styles.cancelledIconBox}>
+          <Text style={{ fontSize: 36 }}>😔</Text>
+        </View>
+        <Text style={styles.bigTitle}>Driver Cancelled</Text>
+        <Text style={styles.subText}>Your driver cancelled the ride.{'\n'}Sorry for the inconvenience.</Text>
+
+        {hasRoute && (
+          <View style={[styles.rideCard, { width: '100%', marginBottom: 20 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: '#22c55e' }} />
+              <Text style={{ flex: 1, fontSize: 13, color: '#374151' }} numberOfLines={1}>{driverCancelledRide.pickup_address}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: '#ef4444' }} />
+              <Text style={{ flex: 1, fontSize: 13, color: '#374151' }} numberOfLines={1}>{driverCancelledRide.destination_address}</Text>
+            </View>
+          </View>
+        )}
+
+        <TouchableOpacity style={[styles.navyBtn, { width: '100%', marginBottom: 10 }]} onPress={handleRebook}>
+          <Text style={styles.navyBtnText}>{hasRoute ? 'Rebook Same Ride →' : 'Book a New Ride →'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.outlineBtn, { width: '100%' }]} onPress={() => setDriverCancelledRide(null)}>
+          <Text style={styles.outlineBtnText}>Dismiss</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -312,10 +371,10 @@ export default function MyRideScreen() {
           <View style={styles.etaPill}>
             <Text style={styles.etaPillText}>
               {ride.status === 'arrived'
-                ? '✅ Driver arrived!'
+                ? 'Driver arrived!'
                 : eta != null
-                  ? `🛺 Driver ~${eta} min away`
-                  : '🛺 Driver on the way…'}
+                  ? `Driver ~${eta} min away`
+                  : 'Driver on the way…'}
             </Text>
           </View>
         </View>
@@ -383,7 +442,7 @@ export default function MyRideScreen() {
           />
           <View style={styles.etaPill}>
             <Text style={styles.etaPillText}>
-              {eta != null ? `🚗 ~${eta} min to destination` : '🚗 Ride in progress'}
+              {eta != null ? `~${eta} min to destination` : 'Ride in progress'}
             </Text>
           </View>
         </View>
@@ -495,6 +554,7 @@ function Chip({ color, bg, children }: { color: string; bg: string; children: st
 const styles = StyleSheet.create({
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
   bigIcon:      { fontSize: 56, marginBottom: 12 },
+  cancelledIconBox: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#fef2f2', borderWidth: 2, borderColor: '#fecaca', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   bigTitle:     { fontSize: 20, fontWeight: '700', color: '#111', textAlign: 'center', marginBottom: 8 },
   subText:      { fontSize: 14, color: '#6b7280', textAlign: 'center', marginBottom: 20 },
   row:          { flexDirection: 'row', gap: 12, marginTop: 12 },
