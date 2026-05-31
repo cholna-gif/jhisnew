@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { formatDualCurrency } from '@/lib/currency';
@@ -40,28 +41,34 @@ export default function HistoryScreen() {
   const [selected, setSelected] = useState<Ride | null>(null);
   const [profiles, setProfiles] = useState<Record<string, any>>({});
 
+  const fetchData = useCallback(async () => {
+    if (!user) return;
+    const [ridesRes, profRes] = await Promise.all([
+      supabase.from('rides' as any).select('*').eq('passenger_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('profiles').select('id, full_name'),
+    ]);
+    setRides((ridesRes.data || []) as Ride[]);
+    const m: Record<string, any> = {};
+    ((profRes.data || []) as any[]).forEach((p: any) => { m[p.id] = p; });
+    setProfiles(m);
+    setLoading(false);
+  }, [user]);
+
+  // Refetch every time this tab comes into focus so new rides appear immediately
+  useFocusEffect(useCallback(() => {
+    setLoading(true);
+    fetchData();
+  }, [fetchData]));
+
+  // Realtime subscription — catches live changes while the tab is open
   useEffect(() => {
     if (!user) return;
-    const fetchData = async () => {
-      const [ridesRes, profRes] = await Promise.all([
-        supabase.from('rides' as any).select('*').eq('passenger_id', user.id).order('created_at', { ascending: false }),
-        supabase.from('profiles').select('id, full_name'),
-      ]);
-      setRides((ridesRes.data || []) as Ride[]);
-      const m: Record<string, any> = {};
-      ((profRes.data || []) as any[]).forEach((p: any) => { m[p.id] = p; });
-      setProfiles(m);
-      setLoading(false);
-    };
-    fetchData();
-
     const channel = supabase
       .channel(`history-${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rides', filter: `passenger_id=eq.${user.id}` }, () => fetchData())
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [user, fetchData]);
 
   if (loading) {
     return (

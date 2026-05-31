@@ -7,10 +7,19 @@
  *   2. Supabase realtime subscription (UPDATE on driver_profiles)
  *   3. Polling every 4 seconds as a reliable fallback
  */
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
+import { SymbolView } from 'expo-symbols';
+import type { SFSymbol } from 'sf-symbols-typescript';
 import { supabase } from '@/lib/supabase';
+
+const VEHICLE_SYMBOL: Record<string, SFSymbol> = {
+  tuktuk: 'car.2.fill',
+  car:    'car.fill',
+  moto:   'motorcycle',
+  van:    'bus.fill',
+};
 
 interface Props {
   pickupLat: number;
@@ -19,6 +28,7 @@ interface Props {
   destLng: number;
   driverId: string | null;
   rideStatus: string;
+  vehicleType?: string;
   onEtaUpdate?: (etaMinutes: number | null) => void;
 }
 
@@ -26,7 +36,7 @@ type Pos = { lat: number; lng: number };
 
 export default function RideMap({
   pickupLat, pickupLng, destLat, destLng,
-  driverId, rideStatus, onEtaUpdate,
+  driverId, rideStatus, vehicleType, onEtaUpdate,
 }: Props) {
   const mapRef  = useRef<MapView>(null);
   const [driverPos, setDriverPos]   = useState<Pos | null>(null);
@@ -122,7 +132,20 @@ export default function RideMap({
         <Marker coordinate={{ latitude: destLat,   longitude: destLng   }} title="Destination" pinColor="#ef4444" />
 
         {driverPos && (
-          <Marker coordinate={{ latitude: driverPos.lat, longitude: driverPos.lng }} title="Your Driver" pinColor="#1A2744" />
+          <Marker
+            coordinate={{ latitude: driverPos.lat, longitude: driverPos.lng }}
+            title="Your Driver"
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <View style={styles.driverMarker}>
+              <SymbolView
+                name={VEHICLE_SYMBOL[vehicleType ?? ''] ?? 'car.fill'}
+                style={styles.driverMarkerIcon}
+                tintColor="#fff"
+                resizeMode="scaleAspectFit"
+              />
+            </View>
+          </Marker>
         )}
 
         {routeCoords.length > 1 && (
@@ -150,4 +173,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   noLocText: { fontSize: 13, color: '#6b7280', fontWeight: '500' },
+  driverMarker: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1A2744', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#D4AF37' },
+  driverMarkerIcon: { width: 20, height: 20 },
 });

@@ -7,13 +7,18 @@ import {
   ActivityIndicator,
   StyleSheet,
   TextInput,
+  Dimensions,
 } from 'react-native';
+
+const SCREEN_H = Dimensions.get('window').height;
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { formatDualCurrency } from '@/lib/currency';
 import RideMap from '@/components/ride/RideMap';
+import ChatModal from '@/components/ChatModal';
+import { SymbolView } from 'expo-symbols';
 import { Ride } from '@/types';
 
 export default function MyRideScreen() {
@@ -33,6 +38,7 @@ export default function MyRideScreen() {
   const [submittingRating, setSubmittingRating] = useState(false);
   const [showRating, setShowRating] = useState(false);
   const [clearingStuck, setClearingStuck] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   const activeRideIdRef       = useRef<string | null>(null);
   const completionFlowStarted = useRef(false);
@@ -354,9 +360,9 @@ export default function MyRideScreen() {
     const safeDestLng = ride.destination_lng ?? ride.pickup_lng ?? 104.9282;
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#fff' }}>
-        {/* ── Live map — takes top half ── */}
-        <View style={styles.mapBox}>
+      <View style={{ flex: 1 }}>
+        {/* ── Full-screen map ── */}
+        <View style={StyleSheet.absoluteFill}>
           <RideMap
             pickupLat={ride.pickup_lat ?? 11.5564}
             pickupLng={ride.pickup_lng ?? 104.9282}
@@ -364,60 +370,86 @@ export default function MyRideScreen() {
             destLng={safeDestLng}
             driverId={ride.driver_id ?? null}
             rideStatus={ride.status}
+            vehicleType={ride.vehicle_type}
             onEtaUpdate={setEta}
           />
+        </View>
 
-          {/* ETA pill overlaid on map */}
+        {/* ── ETA pill pinned to top ── */}
+        <SafeAreaView pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
           <View style={styles.etaPill}>
             <Text style={styles.etaPillText}>
               {ride.status === 'arrived'
-                ? 'Driver arrived!'
-                : eta != null
-                  ? `Driver ~${eta} min away`
-                  : 'Driver on the way…'}
+                ? '✓ Driver arrived!'
+                : eta != null ? `Driver ~${eta} min away` : 'Driver on the way…'}
             </Text>
           </View>
+        </SafeAreaView>
+
+        {/* ── Scrollable bottom sheet ── */}
+        <View style={styles.rideSheet}>
+          <View style={styles.sheetHandle} />
+          <ScrollView
+            contentContainerStyle={styles.sheetContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={styles.statusTitle}>{ride.status === 'matched' ? 'Driver Found!' : 'Driver Arrived!'}</Text>
+              <View style={[styles.inProgressPill, ride.status === 'arrived' && { backgroundColor: '#166534' }]}>
+                <Text style={styles.inProgressTxt}>{ride.status === 'arrived' ? 'Arrived' : 'On the way'}</Text>
+              </View>
+            </View>
+
+            {/* Driver card */}
+            <View style={styles.driverCard}>
+              <View style={styles.avatar}><Text style={styles.avatarTxt}>{driverName.charAt(0).toUpperCase() || '?'}</Text></View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.driverName}>{driverName || 'Your Driver'}</Text>
+                  <TouchableOpacity onPress={toggleFavorite} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <SymbolView
+                      name={isFavorite ? 'heart.fill' : 'heart'}
+                      style={{ width: 18, height: 18 }}
+                      tintColor={isFavorite ? '#ef4444' : '#9ca3af'}
+                      resizeMode="scaleAspectFit"
+                    />
+                  </TouchableOpacity>
+                </View>
+                {driverProfile && (
+                  <>
+                    <Text style={styles.driverVehicle}>{driverProfile.vehicle_color} {driverProfile.vehicle_brand} · {driverProfile.plate_number}</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                      {driverProfile.is_id_verified  && <Chip color="#166534" bg="#dcfce7">✓ ID Verified</Chip>}
+                      {driverProfile.speaks_english   && <Chip color="#1d4ed8" bg="#dbeafe">English</Chip>}
+                      {driverProfile.tourist_friendly && <Chip color="#6d28d9" bg="#ede9fe">Tourist Friendly</Chip>}
+                    </View>
+                  </>
+                )}
+                <Text style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
+                  {ride.status === 'matched' ? 'On the way to you…' : 'Waiting at pickup location'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.infoCard}>
+              <InfoRow label="Distance" value={`${ride.distance_km?.toFixed(1)} km`} />
+              <InfoRow label="Duration" value={`${ride.duration_minutes} min`} />
+              <InfoRow label="Fare"     value={formatDualCurrency(fareDisplay ?? 0)} bold />
+              <InfoRow label="Payment"  value={ride.payment_method ?? 'cash'} />
+            </View>
+
+            <TouchableOpacity style={styles.chatBtn} onPress={() => setShowChat(true)}>
+              <SymbolView name="bubble.left.fill" style={{ width: 18, height: 18 }} tintColor="#1A2744" resizeMode="scaleAspectFit" />
+              <Text style={styles.chatBtnText}>Message Driver</Text>
+            </TouchableOpacity>
+
+            <CancelBtn />
+          </ScrollView>
         </View>
 
-        {/* ── Info below map ── */}
-        <ScrollView contentContainerStyle={styles.infoScroll}>
-          <Text style={styles.statusTitle}>{ride.status === 'matched' ? 'Driver Found!' : 'Driver Arrived!'}</Text>
-
-          {/* Driver card */}
-          <View style={styles.driverCard}>
-            <View style={styles.avatar}><Text style={styles.avatarTxt}>{driverName.charAt(0).toUpperCase() || '?'}</Text></View>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.driverName}>{driverName || 'Your Driver'}</Text>
-                <TouchableOpacity onPress={toggleFavorite}>
-                  <Text style={{ fontSize: 18 }}>{isFavorite ? '❤️' : '🤍'}</Text>
-                </TouchableOpacity>
-              </View>
-              {driverProfile && (
-                <>
-                  <Text style={styles.driverVehicle}>{driverProfile.vehicle_color} {driverProfile.vehicle_brand} · {driverProfile.plate_number}</Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                    {driverProfile.is_id_verified  && <Chip color="#166534" bg="#dcfce7">✓ ID Verified</Chip>}
-                    {driverProfile.speaks_english   && <Chip color="#1d4ed8" bg="#dbeafe">🗣 English</Chip>}
-                    {driverProfile.tourist_friendly && <Chip color="#6d28d9" bg="#ede9fe">🌍 Tourist Friendly</Chip>}
-                  </View>
-                </>
-              )}
-              <Text style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
-                {ride.status === 'matched' ? 'On the way to you…' : 'Waiting at pickup location'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.infoCard}>
-            <InfoRow label="Distance" value={`${ride.distance_km?.toFixed(1)} km`} />
-            <InfoRow label="Duration" value={`${ride.duration_minutes} min`} />
-            <InfoRow label="Fare"     value={formatDualCurrency(fareDisplay ?? 0)} bold />
-            <InfoRow label="Payment"  value={ride.payment_method ?? 'cash'} />
-          </View>
-
-          <CancelBtn />
-        </ScrollView>
+        <ChatModal visible={showChat} onClose={() => setShowChat(false)}
+          rideId={ride.id} passengerId={ride.passenger_id} driverName={driverName || 'Driver'} />
       </View>
     );
   }
@@ -429,8 +461,9 @@ export default function MyRideScreen() {
     const safeDestLng = ride.destination_lng ?? ride.pickup_lng ?? 104.9282;
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#fff' }}>
-        <View style={styles.mapBox}>
+      <View style={{ flex: 1 }}>
+        {/* ── Full-screen map ── */}
+        <View style={StyleSheet.absoluteFill}>
           <RideMap
             pickupLat={ride.pickup_lat ?? 11.5564}
             pickupLng={ride.pickup_lng ?? 104.9282}
@@ -438,38 +471,67 @@ export default function MyRideScreen() {
             destLng={safeDestLng}
             driverId={ride.driver_id ?? null}
             rideStatus="in_progress"
+            vehicleType={ride.vehicle_type}
             onEtaUpdate={setEta}
           />
+        </View>
+
+        {/* ── ETA pill ── */}
+        <SafeAreaView pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
           <View style={styles.etaPill}>
             <Text style={styles.etaPillText}>
               {eta != null ? `~${eta} min to destination` : 'Ride in progress'}
             </Text>
           </View>
-        </View>
+        </SafeAreaView>
 
-        <ScrollView contentContainerStyle={styles.infoScroll}>
-          <View style={styles.inProgressPill}><Text style={styles.inProgressTxt}>{ride.booking_type === 'full_day' ? 'Full Day Hire' : 'Ride in Progress'}</Text></View>
-
-          {driverProfile && (
-            <View style={styles.driverCard}>
-              <View style={styles.avatar}><Text style={styles.avatarTxt}>{driverName.charAt(0).toUpperCase() || '?'}</Text></View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={styles.driverName}>{driverName}</Text>
-                  <TouchableOpacity onPress={toggleFavorite}><Text style={{ fontSize: 18 }}>{isFavorite ? '❤️' : '🤍'}</Text></TouchableOpacity>
-                </View>
-                <Text style={styles.driverVehicle}>{driverProfile.vehicle_color} {driverProfile.vehicle_brand} · {driverProfile.plate_number}</Text>
+        {/* ── Scrollable bottom sheet ── */}
+        <View style={styles.rideSheet}>
+          <View style={styles.sheetHandle} />
+          <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={styles.statusTitle}>{ride.booking_type === 'full_day' ? 'Full Day Hire' : 'Ride in Progress'}</Text>
+              <View style={styles.inProgressPill}>
+                <Text style={styles.inProgressTxt}>In Progress</Text>
               </View>
             </View>
-          )}
 
-          <View style={styles.infoCard}>
-            <InfoRow label="Fare"    value={formatDualCurrency(fareDisplay ?? 0)} bold />
-            <InfoRow label="Payment" value={ride.payment_method ?? 'cash'} />
-          </View>
+            {driverProfile && (
+              <View style={styles.driverCard}>
+                <View style={styles.avatar}><Text style={styles.avatarTxt}>{driverName.charAt(0).toUpperCase() || '?'}</Text></View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={styles.driverName}>{driverName}</Text>
+                    <TouchableOpacity onPress={toggleFavorite} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <SymbolView
+                        name={isFavorite ? 'heart.fill' : 'heart'}
+                        style={{ width: 18, height: 18 }}
+                        tintColor={isFavorite ? '#ef4444' : '#9ca3af'}
+                        resizeMode="scaleAspectFit"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.driverVehicle}>{driverProfile.vehicle_color} {driverProfile.vehicle_brand} · {driverProfile.plate_number}</Text>
+                </View>
+              </View>
+            )}
 
-          <CancelBtn label="Cancel Ride (Emergency)" />
-        </ScrollView>
+            <View style={styles.infoCard}>
+              <InfoRow label="Fare"    value={formatDualCurrency(fareDisplay ?? 0)} bold />
+              <InfoRow label="Payment" value={ride.payment_method ?? 'cash'} />
+            </View>
+
+            <TouchableOpacity style={styles.chatBtn} onPress={() => setShowChat(true)}>
+              <SymbolView name="bubble.left.fill" style={{ width: 18, height: 18 }} tintColor="#1A2744" resizeMode="scaleAspectFit" />
+              <Text style={styles.chatBtnText}>Message Driver</Text>
+            </TouchableOpacity>
+
+            <CancelBtn label="Cancel Ride (Emergency)" />
+          </ScrollView>
+        </View>
+
+        <ChatModal visible={showChat} onClose={() => setShowChat(false)}
+          rideId={ride.id} passengerId={ride.passenger_id} driverName={driverName || 'Driver'} />
       </View>
     );
   }
@@ -597,4 +659,30 @@ const styles = StyleSheet.create({
 
   // Rating
   reviewInput:  { width: '100%', maxWidth: 380, borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, padding: 12, fontSize: 14, color: '#111', minHeight: 80, textAlignVertical: 'top', marginBottom: 16 },
+  chatBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderColor: '#1A2744', borderRadius: 10, paddingVertical: 13, backgroundColor: '#fff' },
+  chatBtnText:  { color: '#1A2744', fontWeight: '700', fontSize: 14 },
+
+  // ── Bottom sheet ──
+  rideSheet: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    height: SCREEN_H * 0.52,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 16,
+  },
+  sheetHandle: {
+    width: 40, height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  sheetContent: { padding: 16, paddingBottom: 36, gap: 12 },
 });
