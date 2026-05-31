@@ -1,5 +1,10 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+/**
+ * BookingMap (web / Leaflet) — pickup, destination, route AND nearby online drivers.
+ * Online driver positions update in real time via Supabase subscription + 5-second polling.
+ */
+import React, { useEffect, useRef, useState } from 'react';
+import { View, StyleSheet } from 'react-native';
+import { supabase } from '@/lib/supabase';
 import { LatLng } from '@/types';
 
 interface BookingMapProps {
@@ -10,136 +15,221 @@ interface BookingMapProps {
   routeCoords?: { latitude: number; longitude: number }[];
 }
 
-export default function BookingMap({
-  pickup,
-  destination,
-  stops = [],
-  onMapPress,
-  routeCoords,
-}: BookingMapProps) {
-  const mapRef = useRef<any>(null);
+interface OnlineDriver {
+  user_id: string;
+  current_lat: number;
+  current_lng: number;
+  vehicle_type?: string;
+}
 
+export default function BookingMap({
+  pickup, destination, stops = [], onMapPress, routeCoords,
+}: BookingMapProps) {
+  const containerRef = useRef<any>(null);
+  const mapRef       = useRef<any>(null);
+  const [mapReady, setMapReady]       = useState(false);
+  const [onlineDrivers, setOnlineDrivers] = useState<OnlineDriver[]>([]);
+
+  // Per-driver marker refs  { user_id → Leaflet Marker }
+  const driverMarkersRef = useRef<Record<string, any>>({});
+  // Static markers
+  const pickupMarkerRef  = useRef<any>(null);
+  const destMarkerRef    = useRef<any>(null);
+  const stopMarkersRef   = useRef<any[]>([]);
+  const routeLayerRef    = useRef<any>(null);
+
+  // ── Fetch online drivers ──────────────────────────────────────────────────
+  const fetchOnlineDrivers = async () => {
+    const { data } = await supabase
+      .from('driver_profiles' as any)
+      .select('user_id, current_lat, current_lng, vehicle_type')
+      .eq('is_online', true)
+      .not('current_lat', 'is', null)
+      .not('current_lng', 'is', null) as any;
+    if (data) setOnlineDrivers(data as OnlineDriver[]);
+  };
+
+  // ── Bootstrap Leaflet once ────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const container = mapRef.current;
-    if (!container) return;
+    const init = () => {
+      const el = containerRef.current;
+      if (!el || (el as any)._lmap) return;
 
-    // Load Leaflet CSS + JS dynamically
-    if (!(window as any)._leafletLoaded) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.onload = () => {
-        (window as any)._leafletLoaded = true;
-        initMap();
-      };
-      document.head.appendChild(script);
-    } else {
-      initMap();
-    }
-
-    function initMap() {
       const L = (window as any).L;
-      if (!L) return;
-
-      // Destroy previous map instance if any
-      if ((container as any)._leaflet_id) {
-        (container as any)._map?.remove();
-      }
-
-      const defaultCenter = pickup
-        ? [pickup.lat, pickup.lng]
-        : [11.5564, 104.9282]; // Phnom Penh
-
-      const map = L.map(container, {
-        center: defaultCenter,
-        zoom: pickup && destination ? 13 : 14,
-      });
-      (container as any)._map = map;
+      // Default center: Siem Reap
+      const map = L.map(el, { center: [13.3671, 103.8498], zoom: 14 });
+      (el as any)._lmap = map;
+      mapRef.current = map;
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
+        attribution: '© OpenStreetMap contributors', maxZoom: 19,
       }).addTo(map);
 
-      // Markers
-      const greenIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#22c55e;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
-      const redIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#ef4444;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
-      const goldIcon = L.divIcon({ className: '', html: '<div style="width:12px;height:12px;background:#D4AF37;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>', iconSize: [12, 12], iconAnchor: [6, 6] });
-
-      if (pickup) L.marker([pickup.lat, pickup.lng], { icon: greenIcon }).bindPopup('Pickup: ' + pickup.address).addTo(map);
-      if (destination) L.marker([destination.lat, destination.lng], { icon: redIcon }).bindPopup('Destination: ' + destination.address).addTo(map);
-      stops.filter(s => s.lat !== 0).forEach((s, i) => {
-        L.marker([s.lat, s.lng], { icon: goldIcon }).bindPopup(`Stop ${i + 1}: ${s.address}`).addTo(map);
-      });
-
-      // Route polyline
-      if (routeCoords && routeCoords.length > 1) {
-        L.polyline(routeCoords.map(c => [c.latitude, c.longitude]), { color: '#D4AF37', weight: 4, opacity: 0.9 }).addTo(map);
-      }
-
-      // Fit bounds
-      const points: [number, number][] = [];
-      if (pickup) points.push([pickup.lat, pickup.lng]);
-      if (destination) points.push([destination.lat, destination.lng]);
-      stops.filter(s => s.lat !== 0).forEach(s => points.push([s.lat, s.lng]));
-      if (points.length >= 2) map.fitBounds(points, { padding: [40, 40] });
-
-      // Click handler
       if (onMapPress) {
-        map.on('click', (e: any) => {
-          onMapPress({ lat: e.latlng.lat, lng: e.latlng.lng });
-        });
+        map.on('click', (e: any) => onMapPress({ lat: e.latlng.lat, lng: e.latlng.lng }));
       }
 
-      // Resize fix
-      setTimeout(() => map.invalidateSize(), 100);
+      setTimeout(() => { map.invalidateSize(); setMapReady(true); }, 150);
+    };
+
+    if ((window as any).L) {
+      init();
+    } else {
+      if (!document.getElementById('lf-css')) {
+        const link = document.createElement('link');
+        link.id = 'lf-css'; link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+      }
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      s.onload = init;
+      document.head.appendChild(s);
     }
 
     return () => {
-      const m = (container as any)._map;
-      if (m) { m.remove(); (container as any)._map = null; }
+      const el = containerRef.current;
+      if (el?._lmap) { el._lmap.remove(); el._lmap = null; mapRef.current = null; }
     };
-  }, [pickup, destination, stops, routeCoords, onMapPress]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Fetch drivers + subscribe + poll ─────────────────────────────────────
+  useEffect(() => {
+    fetchOnlineDrivers();
+    const channel = supabase.channel('booking-drivers-live')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'driver_profiles' }, () => fetchOnlineDrivers())
+      .subscribe();
+    const poll = setInterval(fetchOnlineDrivers, 5000);
+    return () => { supabase.removeChannel(channel); clearInterval(poll); };
+  }, []);
+
+  // ── Sync online driver markers to Leaflet ─────────────────────────────────
+  useEffect(() => {
+    if (!mapReady) return;
+    const L   = (window as any).L;
+    const map = mapRef.current;
+    if (!L || !map) return;
+
+    const existingIds = new Set(Object.keys(driverMarkersRef.current));
+    const currentIds  = new Set(onlineDrivers.map(d => d.user_id));
+
+    // Remove markers for drivers that went offline
+    existingIds.forEach(id => {
+      if (!currentIds.has(id)) {
+        map.removeLayer(driverMarkersRef.current[id]);
+        delete driverMarkersRef.current[id];
+      }
+    });
+
+    // Add or move markers
+    onlineDrivers.forEach(d => {
+      const ll = [d.current_lat, d.current_lng];
+      if (driverMarkersRef.current[d.user_id]) {
+        driverMarkersRef.current[d.user_id].setLatLng(ll);
+      } else {
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="
+            width:28px;height:28px;
+            background:#1A2744;
+            border-radius:50%;
+            border:2.5px solid #D4AF37;
+            box-shadow:0 2px 8px rgba(0,0,0,0.45);
+            display:flex;align-items:center;justify-content:center;
+            font-size:14px;cursor:pointer;
+          ">🛺</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+        });
+        driverMarkersRef.current[d.user_id] = L.marker(ll, { icon })
+          .bindPopup(`<b>${d.vehicle_type ?? 'Driver'}</b><br>Available`)
+          .addTo(map);
+      }
+    });
+  }, [onlineDrivers, mapReady]);
+
+  // ── Pickup marker ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapReady) return;
+    const L   = (window as any).L;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    if (pickupMarkerRef.current) { map.removeLayer(pickupMarkerRef.current); pickupMarkerRef.current = null; }
+    if (pickup) {
+      pickupMarkerRef.current = L.marker([pickup.lat, pickup.lng], { icon: dotIcon(L, '#22c55e') })
+        .bindPopup('Pickup').addTo(map);
+    }
+    fitBounds(map, pickup, destination, stops);
+  }, [pickup, mapReady]);
+
+  // ── Destination marker ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapReady) return;
+    const L   = (window as any).L;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    if (destMarkerRef.current) { map.removeLayer(destMarkerRef.current); destMarkerRef.current = null; }
+    if (destination) {
+      destMarkerRef.current = L.marker([destination.lat, destination.lng], { icon: dotIcon(L, '#ef4444') })
+        .bindPopup('Destination').addTo(map);
+    }
+    fitBounds(map, pickup, destination, stops);
+  }, [destination, mapReady]);
+
+  // ── Stop markers ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapReady) return;
+    const L   = (window as any).L;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    stopMarkersRef.current.forEach(m => map.removeLayer(m));
+    stopMarkersRef.current = stops
+      .filter(s => s.lat !== 0)
+      .map((s, i) => L.marker([s.lat, s.lng], { icon: dotIcon(L, '#D4AF37') }).bindPopup(`Stop ${i + 1}`).addTo(map));
+  }, [stops, mapReady]);
+
+  // ── Route polyline ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapReady) return;
+    const L   = (window as any).L;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    if (routeLayerRef.current) { map.removeLayer(routeLayerRef.current); routeLayerRef.current = null; }
+    if (routeCoords && routeCoords.length > 1) {
+      const latlngs = routeCoords.map(c => [c.latitude, c.longitude]);
+      routeLayerRef.current = L.polyline(latlngs, { color: '#D4AF37', weight: 5, opacity: 0.9 }).addTo(map);
+    }
+  }, [routeCoords, mapReady]);
 
   return (
-    <View style={styles.wrapper}>
-      {/* The div that Leaflet mounts into */}
-      <div
-        ref={mapRef}
-        style={{ width: '100%', height: '100%', borderRadius: 12, overflow: 'hidden' }}
-      />
-      {onMapPress && !pickup && (
-        <View style={styles.hint} pointerEvents="none">
-          <Text style={styles.hintText}>Click map to set pickup</Text>
-        </View>
-      )}
+    <View style={styles.wrap}>
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
     </View>
   );
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function dotIcon(L: any, color: string) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:14px;height:14px;background:${color};border-radius:50%;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,0.4)"></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
+
+function fitBounds(map: any, pickup: LatLng | null, dest: LatLng | null, stops: LatLng[]) {
+  const pts: [number, number][] = [];
+  if (pickup)  pts.push([pickup.lat,  pickup.lng]);
+  if (dest)    pts.push([dest.lat,    dest.lng]);
+  stops.filter(s => s.lat !== 0).forEach(s => pts.push([s.lat, s.lng]));
+  if (pts.length >= 2) map.fitBounds(pts, { padding: [50, 50] });
+  else if (pts.length === 1) map.setView(pts[0], 15);
+}
+
 const styles = StyleSheet.create({
-  wrapper: { flex: 1, width: '100%', height: '100%', overflow: 'hidden' },
-  hint: {
-    position: 'absolute',
-    top: 12,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    pointerEvents: 'none',
-  },
-  hintText: {
-    backgroundColor: 'rgba(26,39,68,0.85)',
-    color: '#D4AF37',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    fontSize: 13,
-    fontWeight: '600',
-    overflow: 'hidden',
-  },
+  wrap: { flex: 1, width: '100%', height: '100%', overflow: 'hidden' },
 });

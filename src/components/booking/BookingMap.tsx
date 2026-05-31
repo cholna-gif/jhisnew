@@ -1,6 +1,11 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+/**
+ * BookingMap (native) — shows pickup, destination, route AND nearby online drivers.
+ * Online driver positions are fetched every 5 seconds and via Supabase realtime.
+ */
+import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet } from 'react-native';
 import MapView, { Marker, Polyline, MapPressEvent, Region } from 'react-native-maps';
+import { supabase } from '@/lib/supabase';
 import { LatLng } from '@/types';
 
 interface BookingMapProps {
@@ -11,85 +16,113 @@ interface BookingMapProps {
   routeCoords?: { latitude: number; longitude: number }[];
 }
 
+interface OnlineDriver {
+  user_id: string;
+  current_lat: number;
+  current_lng: number;
+  vehicle_type?: string;
+}
+
 const DEFAULT_REGION: Region = {
-  latitude: 11.5564,
-  longitude: 104.9282,
+  latitude: 13.3671,   // Siem Reap default
+  longitude: 103.8498,
   latitudeDelta: 0.08,
   longitudeDelta: 0.08,
 };
 
 export default function BookingMap({
-  pickup,
-  destination,
-  stops = [],
-  onMapPress,
-  routeCoords,
+  pickup, destination, stops = [], onMapPress, routeCoords,
 }: BookingMapProps) {
   const mapRef = useRef<MapView>(null);
+  const [onlineDrivers, setOnlineDrivers] = useState<OnlineDriver[]>([]);
+
+  // ── Fetch online drivers ──────────────────────────────────────────────────
+  const fetchOnlineDrivers = async () => {
+    const { data } = await supabase
+      .from('driver_profiles' as any)
+      .select('user_id, current_lat, current_lng, vehicle_type')
+      .eq('is_online', true)
+      .not('current_lat', 'is', null)
+      .not('current_lng', 'is', null) as any;
+    if (data) setOnlineDrivers(data as OnlineDriver[]);
+  };
 
   useEffect(() => {
+    fetchOnlineDrivers();
+
+    // Realtime — fires whenever any driver updates their location
+    const channel = supabase
+      .channel('all-drivers-live')
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'driver_profiles',
+      }, () => fetchOnlineDrivers())
+      .subscribe();
+
+    // Polling fallback every 5 s
+    const poll = setInterval(fetchOnlineDrivers, 5000);
+
+    return () => { supabase.removeChannel(channel); clearInterval(poll); };
+  }, []);
+
+  // ── Fit map to visible points ─────────────────────────────────────────────
+  useEffect(() => {
     if (!mapRef.current) return;
-    const points: { latitude: number; longitude: number }[] = [];
-    if (pickup) points.push({ latitude: pickup.lat, longitude: pickup.lng });
-    if (destination) points.push({ latitude: destination.lat, longitude: destination.lng });
-    stops.forEach(s => points.push({ latitude: s.lat, longitude: s.lng }));
-    if (points.length >= 2) {
-      mapRef.current.fitToCoordinates(points, {
-        edgePadding: { top: 60, right: 40, bottom: 60, left: 40 },
-        animated: true,
+    const pts: { latitude: number; longitude: number }[] = [];
+    if (pickup)      pts.push({ latitude: pickup.lat,      longitude: pickup.lng });
+    if (destination) pts.push({ latitude: destination.lat, longitude: destination.lng });
+    stops.forEach(s => pts.push({ latitude: s.lat, longitude: s.lng }));
+    if (pts.length >= 2) {
+      mapRef.current.fitToCoordinates(pts, {
+        edgePadding: { top: 60, right: 40, bottom: 60, left: 40 }, animated: true,
       });
-    } else if (points.length === 1) {
+    } else if (pts.length === 1) {
       mapRef.current.animateToRegion({
-        latitude: points[0].latitude,
-        longitude: points[0].longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
+        latitude: pts[0].latitude, longitude: pts[0].longitude,
+        latitudeDelta: 0.015, longitudeDelta: 0.015,
       });
     }
   }, [pickup, destination, stops]);
-
-  const handlePress = (e: MapPressEvent) => {
-    const { latitude, longitude } = e.nativeEvent.coordinate;
-    onMapPress?.({ lat: latitude, lng: longitude });
-  };
 
   return (
     <MapView
       ref={mapRef}
       style={StyleSheet.absoluteFillObject}
       initialRegion={DEFAULT_REGION}
-      onPress={onMapPress ? handlePress : undefined}
+      onPress={onMapPress ? (e: MapPressEvent) => {
+        const { latitude, longitude } = e.nativeEvent.coordinate;
+        onMapPress({ lat: latitude, lng: longitude });
+      } : undefined}
       showsUserLocation
       showsMyLocationButton={false}
     >
-      {pickup && (
+      {/* ── Online drivers ── */}
+      {onlineDrivers.map(d => (
         <Marker
-          coordinate={{ latitude: pickup.lat, longitude: pickup.lng }}
-          title="Pickup"
-          pinColor="#22c55e"
-        />
-      )}
-      {destination && (
-        <Marker
-          coordinate={{ latitude: destination.lat, longitude: destination.lng }}
-          title="Destination"
-          pinColor="#ef4444"
-        />
-      )}
-      {stops.filter(s => s.lat !== 0).map((s, i) => (
-        <Marker
-          key={i}
-          coordinate={{ latitude: s.lat, longitude: s.lng }}
-          title={`Stop ${i + 1}`}
-          pinColor="#D4AF37"
+          key={d.user_id}
+          coordinate={{ latitude: d.current_lat, longitude: d.current_lng }}
+          title={`Driver · ${d.vehicle_type ?? ''}`}
+          pinColor="#1A2744"
         />
       ))}
+
+      {/* ── Pickup ── */}
+      {pickup && (
+        <Marker coordinate={{ latitude: pickup.lat, longitude: pickup.lng }} title="Pickup" pinColor="#22c55e" />
+      )}
+
+      {/* ── Destination ── */}
+      {destination && (
+        <Marker coordinate={{ latitude: destination.lat, longitude: destination.lng }} title="Destination" pinColor="#ef4444" />
+      )}
+
+      {/* ── Stops ── */}
+      {stops.filter(s => s.lat !== 0).map((s, i) => (
+        <Marker key={i} coordinate={{ latitude: s.lat, longitude: s.lng }} title={`Stop ${i + 1}`} pinColor="#D4AF37" />
+      ))}
+
+      {/* ── Route ── */}
       {routeCoords && routeCoords.length > 1 && (
-        <Polyline
-          coordinates={routeCoords}
-          strokeColor="#D4AF37"
-          strokeWidth={4}
-        />
+        <Polyline coordinates={routeCoords} strokeColor="#D4AF37" strokeWidth={4} />
       )}
     </MapView>
   );
