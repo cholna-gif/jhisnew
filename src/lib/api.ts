@@ -1,0 +1,118 @@
+import { supabase } from './supabase';
+import { Profile, Ride } from '@/types';
+
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
+
+async function getAuthHeader(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Not authenticated');
+  return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<T> {
+  const headers = await getAuthHeader();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `Request failed: ${res.status}`);
+  return json as T;
+}
+
+// ── Profile ──────────────────────────────────────────────────────────────────
+
+export const ProfileAPI = {
+  get: () => request<Profile>('GET', '/api/profile'),
+  create: (full_name: string, email: string) =>
+    request<{ success: boolean }>('POST', '/api/profile', { full_name, email }),
+  update: (updates: { full_name?: string; phone?: string; wallet_balance?: number }) =>
+    request<Profile>('PUT', '/api/profile', updates),
+  deductWallet: (amount: number) =>
+    request<{ wallet_balance: number }>('POST', '/api/profile/wallet/deduct', { amount }),
+};
+
+// ── Rides ─────────────────────────────────────────────────────────────────────
+
+export const RidesAPI = {
+  book: (rideData: Omit<Ride, 'id' | 'created_at' | 'passenger_id'>) =>
+    request<Ride>('POST', '/api/rides', rideData),
+  getActive: () => request<Ride | null>('GET', '/api/rides/active'),
+  getHistory: () => request<Ride[]>('GET', '/api/rides/history'),
+  hasActive: () =>
+    request<{ hasActiveRide: boolean }>('GET', '/api/rides/guard/active'),
+  getById: (id: string) => request<Ride | null>('GET', `/api/rides/${id}`),
+  cancel: (id: string, reason?: string, payment_status?: string, final_fare?: number | null) =>
+    request<Ride>('PATCH', `/api/rides/${id}/cancel`, { reason, payment_status, final_fare }),
+  clearStuck: () => request<{ cleared: number }>('POST', '/api/rides/clear-stuck'),
+  retry: (id: string) => request<Ride>('POST', `/api/rides/${id}/retry`),
+  rate: (id: string, driver_id: string, rating: number, review?: string) =>
+    request<{ success: boolean }>('PATCH', `/api/rides/${id}/rate`, {
+      driver_id,
+      rating,
+      review,
+    }),
+};
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  id: string;
+  ride_id: string;
+  sender_id: string;
+  sender_role: string;
+  message: string;
+  created_at: string;
+}
+
+export const ChatAPI = {
+  getMessages: (rideId: string) =>
+    request<ChatMessage[]>('GET', `/api/chat/${rideId}`),
+  sendMessage: (rideId: string, message: string, sender_role: string) =>
+    request<ChatMessage>('POST', `/api/chat/${rideId}`, { message, sender_role }),
+};
+
+// ── Support ───────────────────────────────────────────────────────────────────
+
+export const SupportAPI = {
+  submit: (subject: string, category: string, message: string) =>
+    request<{ id: string }>('POST', '/api/support', { subject, category, message }),
+};
+
+// ── Favorites ─────────────────────────────────────────────────────────────────
+
+export interface FavoriteDriver {
+  id: string;
+  passenger_id: string;
+  driver_id: string;
+}
+
+// ── Drivers ───────────────────────────────────────────────────────────────────
+
+export interface DriverInfo {
+  full_name: string | null;
+  driver_profile: Record<string, unknown> | null;
+}
+
+export const DriversAPI = {
+  get: (driverId: string) => request<DriverInfo>('GET', `/api/drivers/${driverId}`),
+};
+
+// ── Favorites ─────────────────────────────────────────────────────────────────
+
+export const FavoritesAPI = {
+  list: () => request<FavoriteDriver[]>('GET', '/api/favorites'),
+  check: (driverId: string) =>
+    request<{ isFavorite: boolean }>('GET', `/api/favorites/${driverId}`),
+  add: (driver_id: string) =>
+    request<{ success: boolean }>('POST', '/api/favorites', { driver_id }),
+  remove: (driverId: string) =>
+    request<{ success: boolean }>('DELETE', `/api/favorites/${driverId}`),
+};

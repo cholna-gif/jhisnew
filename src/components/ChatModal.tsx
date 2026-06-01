@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { supabase } from '@/lib/supabase';
+import { ChatAPI } from '@/lib/api';
 
 interface Message {
   id: string;
@@ -28,11 +29,10 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   rideId: string;
-  passengerId: string;
   driverName: string;
 }
 
-export default function ChatModal({ visible, onClose, rideId, passengerId, driverName }: Props) {
+export default function ChatModal({ visible, onClose, rideId, driverName }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput]       = useState('');
   const [sending, setSending]   = useState(false);
@@ -47,13 +47,9 @@ export default function ChatModal({ visible, onClose, rideId, passengerId, drive
 
     const load = async () => {
       setLoading(true);
-      const { data } = await supabase
-        .from('chat_messages' as any)
-        .select('*')
-        .eq('ride_id', rideId)
-        .order('created_at', { ascending: true }) as any;
+      const data = await ChatAPI.getMessages(rideId);
       if (!cancelled) {
-        setMessages((data as Message[]) ?? []);
+        setMessages(data as Message[]);
         setLoading(false);
       }
     };
@@ -90,12 +86,7 @@ export default function ChatModal({ visible, onClose, rideId, passengerId, drive
     setSending(true);
     setInput('');
 
-    await supabase.from('chat_messages' as any).insert({
-      ride_id:     rideId,
-      sender_id:   passengerId,
-      sender_role: 'passenger',
-      message:     text,
-    } as any);
+    await ChatAPI.sendMessage(rideId, text, 'passenger');
 
     setSending(false);
   };

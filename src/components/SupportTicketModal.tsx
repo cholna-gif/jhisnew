@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
-import { supabase } from '@/lib/supabase';
+import { SupportAPI } from '@/lib/api';
 
 const CATEGORIES = [
   { id: 'booking',  label: 'Booking Issue',     symbol: 'car.fill'              },
@@ -28,13 +28,12 @@ type Category = (typeof CATEGORIES)[number]['id'];
 interface Props {
   visible: boolean;
   onClose: () => void;
-  userId: string;
   userEmail?: string;
 }
 
 type SubmitState = 'idle' | 'loading' | 'success' | 'error';
 
-export default function SupportTicketModal({ visible, onClose, userId, userEmail }: Props) {
+export default function SupportTicketModal({ visible, onClose, userEmail }: Props) {
   const [category, setCategory] = useState<Category>('booking');
   const [message,  setMessage]  = useState('');
   const [state,    setState]    = useState<SubmitState>('idle');
@@ -62,19 +61,12 @@ export default function SupportTicketModal({ visible, onClose, userId, userEmail
 
     const selectedLabel = CATEGORIES.find(c => c.id === category)?.label ?? category;
 
-    const { error } = await supabase.from('support_tickets' as any).insert({
-      user_id:  userId,
-      subject:  selectedLabel,
-      category: selectedLabel,
-      message:  message.trim(),
-      status:   'open',
-    } as any);
-
-    if (error) {
-      setErrorMsg(error.message || 'Failed to send ticket. Please try again.');
-      setState('error');
-    } else {
+    try {
+      await SupportAPI.submit(selectedLabel, selectedLabel, message.trim());
       setState('success');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to send ticket. Please try again.');
+      setState('error');
     }
   };
 

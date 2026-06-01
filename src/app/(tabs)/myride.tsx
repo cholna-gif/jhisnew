@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { RidesAPI, FavoritesAPI, DriversAPI } from '@/lib/api';
 import { formatDualCurrency } from '@/lib/currency';
 import RideMap from '@/components/ride/RideMap';
 import ChatModal from '@/components/ChatModal';
@@ -50,15 +51,7 @@ export default function MyRideScreen() {
   const fetchActiveRide = useCallback(async () => {
     if (!user) return;
 
-    const { data } = await supabase
-      .from('rides' as any)
-      .select('*')
-      .eq('passenger_id', user.id)
-      .in('status', ['pending', 'matched', 'arrived', 'in_progress', 'completed'])
-      .order('created_at', { ascending: false })
-      .limit(1) as any;
-
-    const activeRide = data?.[0] as Ride | undefined;
+    const activeRide = await RidesAPI.getActive();
 
     if (activeRide?.status === 'completed') {
       if (completionFlowStarted.current || activeRideIdRef.current === activeRide.id) {
@@ -69,25 +62,16 @@ export default function MyRideScreen() {
     } else if (completionFlowStarted.current) {
       // keep post-ride flow
     } else if (!activeRide) {
-      // Active ride disappeared — look up the exact ride we were tracking
-      const knownId     = activeRideIdRef.current;
-      const wasMatched  = ['matched', 'arrived', 'in_progress'].includes(lastKnownStatusRef.current ?? '');
+      const knownId    = activeRideIdRef.current;
+      const wasMatched = ['matched', 'arrived', 'in_progress'].includes(lastKnownStatusRef.current ?? '');
 
       if (knownId && wasMatched) {
-        // Query the specific ride by ID — it may now be cancelled
-        const { data: gone } = await supabase
-          .from('rides' as any)
-          .select('*')
-          .eq('id', knownId)
-          .maybeSingle() as any;
-
-        const cancelledRide = gone as Ride | null;
+        const cancelledRide = await RidesAPI.getById(knownId);
         const byPassenger   = cancelledRide?.cancellation_reason?.toLowerCase().includes('passenger');
 
         if (cancelledRide?.status === 'cancelled' && !byPassenger) {
           setDriverCancelledRide(cancelledRide);
         } else if (!cancelledRide || (cancelledRide.status === 'cancelled' && !byPassenger)) {
-          // Ride vanished with no record — still a driver cancellation
           setDriverCancelledRide({ id: knownId, status: 'cancelled' } as Ride);
         } else {
           setDriverCancelledRide(null);
@@ -105,12 +89,11 @@ export default function MyRideScreen() {
       lastKnownStatusRef.current = activeRide.status;
 
       if (activeRide.driver_id) {
-        const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', activeRide.driver_id).maybeSingle();
-        setDriverName((prof as any)?.full_name || 'Driver');
-        const { data: dp } = await supabase.from('driver_profiles' as any).select('*').eq('user_id', activeRide.driver_id).maybeSingle();
-        setDriverProfile(dp);
-        const { data: fav } = await supabase.from('favorite_drivers' as any).select('id').eq('passenger_id', user.id).eq('driver_id', activeRide.driver_id).maybeSingle() as any;
-        setIsFavorite(!!fav);
+        const driverInfo = await DriversAPI.get(activeRide.driver_id);
+        setDriverName(driverInfo.full_name || 'Driver');
+        setDriverProfile(driverInfo.driver_profile);
+        const { isFavorite } = await FavoritesAPI.check(activeRide.driver_id);
+        setIsFavorite(isFavorite);
       }
     }
     setLoading(false);
@@ -141,9 +124,9 @@ export default function MyRideScreen() {
   useEffect(() => {
     if (!pendingTimedOut || !ride || ride.status !== 'pending') return;
     const t = setTimeout(async () => {
-      const { data } = await supabase.from('rides' as any).select('status').eq('id', ride.id).maybeSingle() as any;
-      if (data?.status === 'pending') {
-        await supabase.from('rides' as any).update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancellation_reason: 'No driver available (timeout)' } as any).eq('id', ride.id);
+      const rideData = await RidesAPI.getById(ride.id);
+      if (rideData?.status === 'pending') {
+        await RidesAPI.cancel(ride.id, 'No driver available (timeout)');
         activeRideIdRef.current = null; setRide(null); setPendingTimedOut(false);
       }
     }, 60 * 1000);
@@ -171,7 +154,7 @@ export default function MyRideScreen() {
   const cancelRide = async () => {
     if (!ride) return;
     setCancelling(true);
-    await supabase.from('rides' as any).update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancellation_reason: 'Cancelled by passenger' } as any).eq('id', ride.id);
+    await RidesAPI.cancel(ride.id, 'Cancelled by passenger');
     activeRideIdRef.current = null; completionFlowStarted.current = false;
     setRide(null); setPendingTimedOut(false); setCancelling(false);
   };
@@ -179,50 +162,34 @@ export default function MyRideScreen() {
   const clearStuckRides = async () => {
     if (!user) return;
     setClearingStuck(true);
-    const { data } = await supabase.from('rides' as any).select('id').eq('passenger_id', user.id).in('status', ['pending', 'matched', 'arrived', 'in_progress']).order('created_at', { ascending: false }) as any;
-    for (const r of (data ?? [])) {
-      await supabase.from('rides' as any).update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancellation_reason: 'Force-cleared by passenger' } as any).eq('id', r.id);
-    }
+    await RidesAPI.clearStuck();
     setClearingStuck(false);
     fetchActiveRide();
   };
 
   const retryRide = async () => {
     if (!ride) return;
-    await supabase.from('rides' as any).update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancellation_reason: 'No driver — passenger retried' } as any).eq('id', ride.id);
-    const { data: created, error } = await supabase.from('rides' as any).insert({
-      passenger_id: ride.passenger_id, pickup_address: ride.pickup_address, pickup_lat: ride.pickup_lat, pickup_lng: ride.pickup_lng,
-      destination_address: ride.destination_address, destination_lat: ride.destination_lat, destination_lng: ride.destination_lng,
-      distance_km: ride.distance_km, duration_minutes: ride.duration_minutes, estimated_fare: ride.estimated_fare,
-      vehicle_type: ride.vehicle_type, ride_type: ride.ride_type, booking_type: ride.booking_type,
-      group_size: ride.group_size, payment_method: ride.payment_method, status: 'pending',
-    } as any).select().single() as any;
-    if (!error) { setPendingTimedOut(false); setRide(created as Ride); activeRideIdRef.current = created.id; }
+    try {
+      const newRide = await RidesAPI.retry(ride.id);
+      setPendingTimedOut(false); setRide(newRide); activeRideIdRef.current = newRide.id;
+    } catch {}
   };
 
   const toggleFavorite = async () => {
-    if (!ride?.driver_id || !user) return;
+    if (!ride?.driver_id) return;
     if (isFavorite) {
-      await supabase.from('favorite_drivers' as any).delete().eq('passenger_id', user.id).eq('driver_id', ride.driver_id);
+      await FavoritesAPI.remove(ride.driver_id);
       setIsFavorite(false);
     } else {
-      await supabase.from('favorite_drivers' as any).insert({ passenger_id: user.id, driver_id: ride.driver_id } as any);
+      await FavoritesAPI.add(ride.driver_id);
       setIsFavorite(true);
     }
   };
 
   const submitRating = async () => {
-    if (!ride || rating === 0) return;
+    if (!ride || rating === 0 || !ride.driver_id) return;
     setSubmittingRating(true);
-    await supabase.from('rides' as any).update({ driver_rating: rating, driver_review: review } as any).eq('id', ride.id);
-    if (ride.driver_id) {
-      await supabase.from('ride_ratings').insert({ ride_id: ride.id, rater_id: user!.id, rated_id: ride.driver_id, rating, review, rated_as: 'driver' });
-      const { data: all } = await supabase.from('ride_ratings').select('rating').eq('rated_id', ride.driver_id).eq('rated_as', 'driver');
-      if (all?.length) {
-        const avg = (all as any[]).reduce((s, r) => s + r.rating, 0) / all.length;
-        await supabase.from('driver_profiles' as any).update({ average_rating: parseFloat(avg.toFixed(2)) } as any).eq('user_id', ride.driver_id);
-      }
-    }
+    await RidesAPI.rate(ride.id, ride.driver_id, rating, review);
     setSubmittingRating(false); completionFlowStarted.current = false; setRide(null); setShowRating(false);
   };
 
@@ -243,22 +210,21 @@ export default function MyRideScreen() {
     const hasRoute = !!(driverCancelledRide.pickup_address && driverCancelledRide.destination_address);
 
     const handleRebook = async () => {
-      if (!user || !hasRoute) { router.replace('/(tabs)'); return; }
+      if (!hasRoute) { router.replace('/(tabs)'); return; }
       const r = driverCancelledRide;
-      const { data: created, error } = await supabase.from('rides' as any).insert({
-        passenger_id: user.id,
-        pickup_address: r.pickup_address, pickup_lat: r.pickup_lat, pickup_lng: r.pickup_lng,
-        destination_address: r.destination_address, destination_lat: r.destination_lat, destination_lng: r.destination_lng,
-        distance_km: r.distance_km, duration_minutes: r.duration_minutes, estimated_fare: r.estimated_fare,
-        vehicle_type: r.vehicle_type, ride_type: r.ride_type ?? 'private', booking_type: r.booking_type ?? 'standard',
-        payment_method: r.payment_method ?? 'cash', status: 'pending',
-      } as any).select().single() as any;
-      if (!error) {
+      try {
+        const newRide = await RidesAPI.book({
+          pickup_address: r.pickup_address, pickup_lat: r.pickup_lat, pickup_lng: r.pickup_lng,
+          destination_address: r.destination_address, destination_lat: r.destination_lat, destination_lng: r.destination_lng,
+          distance_km: r.distance_km, duration_minutes: r.duration_minutes, estimated_fare: r.estimated_fare,
+          vehicle_type: r.vehicle_type, ride_type: r.ride_type ?? 'private', booking_type: r.booking_type ?? 'standard',
+          payment_method: r.payment_method ?? 'cash', status: 'pending',
+        } as any);
         setDriverCancelledRide(null);
-        setRide(created as Ride);
-        activeRideIdRef.current = created.id;
+        setRide(newRide);
+        activeRideIdRef.current = newRide.id;
         lastKnownStatusRef.current = 'pending';
-      }
+      } catch {}
     };
 
     return (
@@ -449,7 +415,7 @@ export default function MyRideScreen() {
         </View>
 
         <ChatModal visible={showChat} onClose={() => setShowChat(false)}
-          rideId={ride.id} passengerId={ride.passenger_id} driverName={driverName || 'Driver'} />
+          rideId={ride.id} driverName={driverName || 'Driver'} />
       </View>
     );
   }
@@ -531,7 +497,7 @@ export default function MyRideScreen() {
         </View>
 
         <ChatModal visible={showChat} onClose={() => setShowChat(false)}
-          rideId={ride.id} passengerId={ride.passenger_id} driverName={driverName || 'Driver'} />
+          rideId={ride.id} driverName={driverName || 'Driver'} />
       </View>
     );
   }

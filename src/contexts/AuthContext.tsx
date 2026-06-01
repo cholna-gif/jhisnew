@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { ProfileAPI } from '@/lib/api';
 import { Profile } from '@/types';
 
 interface AuthContextValue {
@@ -26,13 +27,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-    setProfile(data as Profile | null);
+  const fetchProfile = async (_userId: string) => {
+    try {
+      const data = await ProfileAPI.get();
+      setProfile(data);
+    } catch {
+      setProfile(null);
+    }
   };
 
   useEffect(() => {
@@ -88,20 +89,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const newUser = data.user;
     if (!newUser) return { error: 'Could not create account', needsVerification: false };
 
-    // Upsert profile row
-    await supabase.from('profiles').upsert({
-      id: newUser.id,
-      full_name: fullName,
-      email,
-      role: 'passenger',
-      wallet_balance: 0,
-    });
-
-    // Insert passenger role (jihwolrd's RLS policies check this table)
-    await supabase.from('user_roles').upsert({
-      user_id: newUser.id,
-      role: 'passenger',
-    });
+    // Create profile + user_roles via backend API
+    await ProfileAPI.create(fullName, email);
 
     // If Supabase returned an active session (email confirm disabled), sign out.
     // We always want the user to log in manually, just like on jihwolrd.

@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import type { SFSymbol } from 'sf-symbols-typescript';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { ProfileAPI, RidesAPI } from '@/lib/api';
 import { formatUsd } from '@/lib/currency';
 import SupportTicketModal from '@/components/SupportTicketModal';
 
@@ -42,24 +42,28 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from('profiles').select('full_name, phone, wallet_balance').eq('id', user.id).single()
-      .then(({ data }) => {
-        if (data) {
-          setFullName((data as any).full_name || '');
-          setPhone((data as any).phone || '');
-          setWalletBalance((data as any).wallet_balance ?? 0);
-        }
-      });
-    supabase.from('rides' as any).select('id', { count: 'exact' }).eq('passenger_id', user.id).eq('status', 'completed')
-      .then(({ count }) => setRideCount(count ?? 0));
+    ProfileAPI.get().then(data => {
+      if (data) {
+        setFullName(data.full_name || '');
+        setPhone(data.phone || '');
+        setWalletBalance(data.wallet_balance ?? 0);
+      }
+    });
+    RidesAPI.getHistory().then(rides => {
+      setRideCount(rides.filter(r => r.status === 'completed').length);
+    });
   }, [user]);
 
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
-    const { error } = await supabase.from('profiles').update({ full_name: fullName, phone }).eq('id', user.id);
-    if (error) Alert.alert('Error', 'Failed to save profile');
-    else { await refreshProfile(); Alert.alert('Saved', 'Profile updated!'); }
+    try {
+      await ProfileAPI.update({ full_name: fullName, phone });
+      await refreshProfile();
+      Alert.alert('Saved', 'Profile updated!');
+    } catch {
+      Alert.alert('Error', 'Failed to save profile');
+    }
     setSaving(false);
   };
 
@@ -67,14 +71,15 @@ export default function ProfileScreen() {
     const amount = parseFloat(topUpAmount);
     if (isNaN(amount) || amount <= 0) { Alert.alert('Error', 'Enter a valid amount'); return; }
     setToppingUp(true);
-    const newBalance = walletBalance + amount;
-    const { error } = await supabase.from('profiles').update({ wallet_balance: newBalance }).eq('id', user!.id);
-    if (error) Alert.alert('Error', 'Top up failed');
-    else {
+    try {
+      const newBalance = walletBalance + amount;
+      await ProfileAPI.update({ wallet_balance: newBalance });
       setWalletBalance(newBalance);
       setTopUpAmount('');
       setShowTopUp(false);
       Alert.alert('Top Up Success', `${formatUsd(amount)} added to your wallet!`);
+    } catch {
+      Alert.alert('Error', 'Top up failed');
     }
     setToppingUp(false);
   };
@@ -239,7 +244,6 @@ export default function ProfileScreen() {
       <SupportTicketModal
         visible={showTicket}
         onClose={() => setShowTicket(false)}
-        userId={user?.id ?? ''}
         userEmail={user?.email}
       />
     </SafeAreaView>

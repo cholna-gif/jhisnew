@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { ProfileAPI, RidesAPI } from '@/lib/api';
 import { formatDualCurrency } from '@/lib/currency';
 import { Ride } from '@/types';
 
@@ -43,13 +44,12 @@ export default function HistoryScreen() {
 
   const fetchData = useCallback(async () => {
     if (!user) return;
-    const [ridesRes, profRes] = await Promise.all([
-      supabase.from('rides' as any).select('*').eq('passenger_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('profiles').select('id, full_name'),
-    ]);
-    setRides((ridesRes.data || []) as Ride[]);
+    const rides = await RidesAPI.getHistory();
+    setRides(rides);
     const m: Record<string, any> = {};
-    ((profRes.data || []) as any[]).forEach((p: any) => { m[p.id] = p; });
+    rides.forEach(r => {
+      if (r.driver_id && r.driver_name) m[r.driver_id] = { id: r.driver_id, full_name: r.driver_name };
+    });
     setProfiles(m);
     setLoading(false);
   }, [user]);
@@ -113,20 +113,14 @@ export default function HistoryScreen() {
 
   const handleCancelScheduled = async (rideId: string) => {
     const target = rides.find(r => r.id === rideId);
-    if (target?.payment_method === 'wallet' && target?.payment_status === 'paid' && user) {
+    if (target?.payment_method === 'wallet' && target?.payment_status === 'paid') {
       const refundAmount = target.estimated_fare || target.offered_fare || 0;
-      const { data: prof } = await supabase.from('profiles').select('wallet_balance').eq('id', user.id).single();
-      const newBalance = ((prof as any)?.wallet_balance ?? 0) + refundAmount;
-      await supabase.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id);
+      const profile = await ProfileAPI.get();
+      const newBalance = (profile?.wallet_balance ?? 0) + refundAmount;
+      await ProfileAPI.update({ wallet_balance: newBalance });
     }
     const isPaid = target?.payment_status === 'paid';
-    await supabase.from('rides' as any).update({
-      status: 'cancelled',
-      cancelled_at: new Date().toISOString(),
-      cancellation_reason: 'Cancelled by passenger',
-      payment_status: isPaid ? 'refunded' : 'pending',
-      final_fare: null,
-    } as any).eq('id', rideId);
+    await RidesAPI.cancel(rideId, 'Cancelled by passenger', isPaid ? 'refunded' : 'pending', null);
     setRides(prev => prev.map(r => r.id === rideId ? { ...r, status: 'cancelled' as any, payment_status: isPaid ? 'refunded' : 'pending', final_fare: undefined } : r));
   };
 
