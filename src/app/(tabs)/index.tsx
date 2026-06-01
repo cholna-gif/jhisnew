@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { RidesAPI } from '@/lib/api';
 import { hasActiveRide } from '@/lib/ride-guards';
 import { VEHICLE_OPTIONS, calculateFare, calculateShareFare } from '@/components/booking/VehicleSelector';
 import VehicleSelector from '@/components/booking/VehicleSelector';
@@ -98,12 +98,8 @@ export default function BookScreen() {
 
     // Polling fallback every 3 s
     const poll = setInterval(async () => {
-      const { data } = await supabase
-        .from('rides' as any)
-        .select('status')
-        .eq('id', bookedRideId)
-        .single() as any;
-      const status = data?.status;
+      const ride = await RidesAPI.getById(bookedRideId);
+      const status = ride?.status;
       if (status && status !== 'pending' && status !== 'scheduled') go();
     }, 3000);
 
@@ -259,8 +255,7 @@ export default function BookScreen() {
     const pStatus        = paymentMethod === 'cash' ? 'pending' : 'paid';
 
     try {
-      const { data: newRide, error } = await (supabase.from('rides' as any).insert({
-        passenger_id:      user.id,
+      const newRide = await RidesAPI.book({
         booking_type:      'standard',
         status:            'pending',
         pickup_address:    pickup.address,
@@ -280,16 +275,9 @@ export default function BookScreen() {
         group_size:        groupSize,
         remaining_seats:   remainingSeats > 0 ? remainingSeats : null,
         shared_ride_group: isShareRide ? uuid() : null,
-      } as any).select('id').single() as any);
-
-      if (error) {
-        console.error('Booking insert error:', error);
-        setConfirmError(error.message || 'Failed to create ride. Please try again.');
-        setConfirmState('error');
-      } else {
-        setBookedRideId(newRide?.id ?? null);
-        setConfirmState('success');
-      }
+      } as any);
+      setBookedRideId(newRide?.id ?? null);
+      setConfirmState('success');
     } catch (e: any) {
       console.error('Booking exception:', e);
       setConfirmError(e?.message || 'An unexpected error occurred. Please try again.');

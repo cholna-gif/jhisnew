@@ -11,7 +11,7 @@ import {
   Clipboard,
 } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { ProfileAPI } from '@/lib/api';
 
 type PaymentMethod = 'cash' | 'card' | 'aba' | 'wing' | 'wallet';
 
@@ -45,8 +45,7 @@ export default function PaymentSelection({ fare, onConfirm, onBack }: PaymentSel
 
   useEffect(() => {
     if (user) {
-      supabase.from('profiles').select('wallet_balance').eq('id', user.id).single()
-        .then(({ data }) => setWalletBalance((data as any)?.wallet_balance ?? 0));
+      ProfileAPI.get().then(p => setWalletBalance(p?.wallet_balance ?? 0));
     }
   }, [user]);
 
@@ -71,10 +70,7 @@ export default function PaymentSelection({ fare, onConfirm, onBack }: PaymentSel
     if (selected === 'aba' || selected === 'wing') { onConfirm(selected, 'pending'); return; }
     if (selected === 'wallet') {
       if (walletBalance < fare) return;
-      const newBalance = walletBalance - fare;
-      if (user) {
-        await supabase.from('profiles').update({ wallet_balance: newBalance }).eq('id', user.id);
-      }
+      await ProfileAPI.deductWallet(fare);
       setSuccess(true);
       setTimeout(() => onConfirm('wallet', 'paid'), 800);
       return;

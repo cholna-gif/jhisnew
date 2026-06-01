@@ -14,7 +14,7 @@ import {
 import * as Location from 'expo-location';
 import { SymbolView } from 'expo-symbols';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { RidesAPI } from '@/lib/api';
 import { hasActiveRide, isPassengerSuspended, SUSPENDED_BOOKING_MSG } from '@/lib/ride-guards';
 import BookingMap from './BookingMap';
 import LocationSearch from './LocationSearch';
@@ -101,29 +101,26 @@ export default function FullDayHireTab({ onRideCreated }: FullDayHireTabProps) {
       return;
     }
 
-    const { error } = await supabase.from('rides' as any).insert({
-      passenger_id: user.id,
-      booking_type: 'full_day',
-      status: 'pending',
-      pickup_address: pickup.address,
-      pickup_lat: pickup.lat,
-      pickup_lng: pickup.lng,
-      vehicle_type: vehicleType,
-      offered_fare: fare,
-      hire_description: description.trim(),
-      payment_method: paymentMethod,
-      ride_type: 'private',
-      group_size: 1,
-    } as any);
-
-    setLoading(false);
-    if (error) {
-      console.error('Full day insert error:', error);
-      Alert.alert('Booking Failed', error.message || 'Failed to send offer. Please try again.');
-    } else {
+    try {
+      await RidesAPI.book({
+        booking_type: 'full_day',
+        status: 'pending',
+        pickup_address: pickup.address,
+        pickup_lat: pickup.lat,
+        pickup_lng: pickup.lng,
+        vehicle_type: vehicleType,
+        offered_fare: fare,
+        hire_description: description.trim(),
+        payment_method: paymentMethod,
+        ride_type: 'private',
+        group_size: 1,
+      } as any);
       Alert.alert('Offer Sent! 🛺', 'Looking for a driver to accept…');
       onRideCreated();
+    } catch (e: any) {
+      Alert.alert('Booking Failed', e?.message || 'Failed to send offer. Please try again.');
     }
+    setLoading(false);
   };
 
   const formComplete = !!(pickup && description.trim() && offeredFare && parseFloat(offeredFare) > 0);

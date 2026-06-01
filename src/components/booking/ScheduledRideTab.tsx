@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { RidesAPI } from '@/lib/api';
 import { hasActiveRide, isPassengerSuspended, SUSPENDED_BOOKING_MSG } from '@/lib/ride-guards';
 import { VEHICLE_OPTIONS, calculateFare } from './VehicleSelector';
 import VehicleSelector from './VehicleSelector';
@@ -166,39 +166,31 @@ export default function ScheduledRideTab({ onRideCreated }: ScheduledRideTabProp
     }
     const vehicle = VEHICLE_OPTIONS.find(v => v.type === vehicleType)!;
     const fare = calculateFare(vehicle, distanceKm);
-    const { error } = await supabase.from('rides' as any).insert({
-      passenger_id: user.id,
-      booking_type: 'scheduled',
-      status: 'scheduled',
-      scheduled_datetime: scheduledDt.toISOString(),
-      pickup_address: pickup.address,
-      pickup_lat: pickup.lat,
-      pickup_lng: pickup.lng,
-      destination_address: destination.address,
-      destination_lat: destination.lat,
-      destination_lng: destination.lng,
-      stops: stops.filter(s => s.lat !== 0).map(s => ({ lat: s.lat, lng: s.lng, address: s.address })),
-      vehicle_type: vehicleType,
-      estimated_fare: parseFloat(fare.toFixed(2)),
-      distance_km: parseFloat(distanceKm.toFixed(2)),
-      duration_minutes: durationMin,
-      payment_method: paymentMethod,
-      ride_type: 'private',
-      group_size: 1,
-    } as any);
-    setLoading(false);
-    if (error) {
-      console.error('Scheduled ride insert error:', error);
-      Alert.alert('Booking Failed', error.message || 'Failed to schedule ride. Please try again.');
-    } else {
-      await supabase.from('notifications').insert({
-        user_id: user.id,
-        title: 'Ride Scheduled',
-        message: `Your ride is scheduled for ${scheduledDt.toLocaleString()}`,
-        type: 'ride_scheduled',
-      });
+    try {
+      await RidesAPI.book({
+        booking_type: 'scheduled',
+        status: 'scheduled',
+        scheduled_datetime: scheduledDt.toISOString(),
+        pickup_address: pickup.address,
+        pickup_lat: pickup.lat,
+        pickup_lng: pickup.lng,
+        destination_address: destination.address,
+        destination_lat: destination.lat,
+        destination_lng: destination.lng,
+        stops: stops.filter(s => s.lat !== 0).map(s => ({ lat: s.lat, lng: s.lng, address: s.address })),
+        vehicle_type: vehicleType,
+        estimated_fare: parseFloat(fare.toFixed(2)),
+        distance_km: parseFloat(distanceKm.toFixed(2)),
+        duration_minutes: durationMin,
+        payment_method: paymentMethod,
+        ride_type: 'private',
+        group_size: 1,
+      } as any);
       setConfirmed(true);
+    } catch (e: any) {
+      Alert.alert('Booking Failed', e?.message || 'Failed to schedule ride. Please try again.');
     }
+    setLoading(false);
   };
 
   const selectedVehicle = VEHICLE_OPTIONS.find(v => v.type === vehicleType)!;
