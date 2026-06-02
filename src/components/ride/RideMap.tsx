@@ -13,6 +13,7 @@ import MapView, { Marker, Polyline } from 'react-native-maps';
 import { SymbolView } from 'expo-symbols';
 import type { SFSymbol } from 'sf-symbols-typescript';
 import { supabase } from '@/lib/supabase';
+import { DriversAPI } from '@/lib/api';
 
 const VEHICLE_SYMBOL: Record<string, SFSymbol> = {
   tuktuk: 'car.2.fill',
@@ -42,17 +43,15 @@ export default function RideMap({
   const [driverPos, setDriverPos]   = useState<Pos | null>(null);
   const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
 
-  // ── Fetch driver location from DB ────────────────────────────────────────
+  // ── Fetch driver location via backend API ────────────────────────────────
   const fetchDriverLoc = async () => {
     if (!driverId) return;
-    const { data } = await supabase
-      .from('driver_profiles' as any)
-      .select('current_lat, current_lng')
-      .eq('user_id', driverId)
-      .maybeSingle() as any;
-    if (data?.current_lat && data?.current_lng) {
-      setDriverPos({ lat: data.current_lat, lng: data.current_lng });
-    }
+    try {
+      const data = await DriversAPI.getLocation(driverId);
+      if (data?.current_lat && data?.current_lng) {
+        setDriverPos({ lat: data.current_lat, lng: data.current_lng });
+      }
+    } catch {}
   };
 
   // Initial fetch + realtime subscription + 4-second polling

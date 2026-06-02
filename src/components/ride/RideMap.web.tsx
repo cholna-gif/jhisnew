@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import { DriversAPI } from '@/lib/api';
 
 interface Props {
   pickupLat: number;
@@ -33,16 +34,14 @@ export default function RideMap({
   const [driverPos, setDriverPos] = useState<Pos | null>(null);
   const [mapReady,  setMapReady]  = useState(false);
 
-  // ── Fetch helper ─────────────────────────────────────────────────────────
+  // ── Fetch helper via backend API ─────────────────────────────────────────
   const fetchDriverLoc = async (id: string) => {
-    const { data } = await supabase
-      .from('driver_profiles' as any)
-      .select('current_lat, current_lng')
-      .eq('user_id', id)
-      .maybeSingle() as any;
-    if (data?.current_lat && data?.current_lng) {
-      setDriverPos({ lat: data.current_lat, lng: data.current_lng });
-    }
+    try {
+      const data = await DriversAPI.getLocation(id);
+      if (data?.current_lat && data?.current_lng) {
+        setDriverPos({ lat: data.current_lat, lng: data.current_lng });
+      }
+    } catch {}
   };
 
   // ── Bootstrap Leaflet map once ────────────────────────────────────────────

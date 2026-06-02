@@ -101,8 +101,25 @@ export interface DriverInfo {
   driver_profile: Record<string, unknown> | null;
 }
 
+export interface DriverLocation {
+  current_lat: number;
+  current_lng: number;
+}
+
+export interface OnlineDriver {
+  user_id: string;
+  current_lat: number;
+  current_lng: number;
+  vehicle_type?: string;
+}
+
 export const DriversAPI = {
-  get: (driverId: string) => request<DriverInfo>('GET', `/api/drivers/${driverId}`),
+  get: (driverId: string) =>
+    request<DriverInfo>('GET', `/api/drivers/${driverId}`),
+  getLocation: (driverId: string) =>
+    request<DriverLocation>('GET', `/api/drivers/${driverId}/location`),
+  getOnline: () =>
+    request<OnlineDriver[]>('GET', '/api/drivers/online'),
 };
 
 // ── Favorites ─────────────────────────────────────────────────────────────────

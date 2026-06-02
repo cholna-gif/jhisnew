@@ -17,6 +17,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { ProfileAPI } from '@/lib/api';
 import { formatKhMask, sanitizeKhDigits, isValidKhPhone, composeKhPhone } from '@/lib/phone';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -146,15 +147,11 @@ export default function AuthScreen() {
       return;
     }
 
-    // Save phone number
+    // Save phone number via backend API
     if (phoneDigits.length > 0) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase
-          .from('profiles')
-          .update({ phone: composeKhPhone(phoneDigits) })
-          .eq('id', user.id);
-      }
+      try {
+        await ProfileAPI.update({ phone: composeKhPhone(phoneDigits) });
+      } catch {}
     }
 
     if (needsVerification) {

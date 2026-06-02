@@ -5,6 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import { DriversAPI } from '@/lib/api';
 import { LatLng } from '@/types';
 
 interface BookingMapProps {
@@ -38,15 +39,12 @@ export default function BookingMap({
   const stopMarkersRef   = useRef<any[]>([]);
   const routeLayerRef    = useRef<any>(null);
 
-  // ── Fetch online drivers ──────────────────────────────────────────────────
+  // ── Fetch online drivers via backend API ─────────────────────────────────
   const fetchOnlineDrivers = async () => {
-    const { data } = await supabase
-      .from('driver_profiles' as any)
-      .select('user_id, current_lat, current_lng, vehicle_type')
-      .eq('is_online', true)
-      .not('current_lat', 'is', null)
-      .not('current_lng', 'is', null) as any;
-    if (data) setOnlineDrivers(data as OnlineDriver[]);
+    try {
+      const data = await DriversAPI.getOnline();
+      setOnlineDrivers(data);
+    } catch {}
   };
 
   // ── Bootstrap Leaflet once ────────────────────────────────────────────────
