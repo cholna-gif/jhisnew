@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { RidesAPI } from '@/lib/api';
 import { hasActiveRide } from '@/lib/ride-guards';
 import { VEHICLE_OPTIONS, calculateFare, calculateShareFare } from '@/components/booking/VehicleSelector';
