@@ -10,7 +10,6 @@ import {
   Platform,
   ScrollView,
   Alert,
-  ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
@@ -24,7 +23,23 @@ WebBrowser.maybeCompleteAuthSession();
 
 type Tab = 'login' | 'signup';
 
-// ── Password strength ─────────────────────────────────────────────────────────
+const C = {
+  navy:       '#0D1B36',
+  navyLight:  '#1A2744',
+  gold:       '#D4AF37',
+  goldDim:    'rgba(212,175,55,0.18)',
+  white:      '#ffffff',
+  white60:    'rgba(255,255,255,0.60)',
+  white35:    'rgba(255,255,255,0.35)',
+  white12:    'rgba(255,255,255,0.12)',
+  white08:    'rgba(255,255,255,0.08)',
+  white18:    'rgba(255,255,255,0.18)',
+  inputBg:    'rgba(255,255,255,0.07)',
+  inputBorder:'rgba(255,255,255,0.16)',
+  red:        '#ef4444',
+
+};
+
 const getPasswordStrength = (pw: string): number => {
   let score = 0;
   if (pw.length >= 8) score++;
@@ -36,23 +51,18 @@ const getPasswordStrength = (pw: string): number => {
 const STRENGTH_LABEL = ['Very weak', 'Weak', 'Fair', 'Strong'];
 const STRENGTH_COLOR = ['#ef4444', '#f97316', '#eab308', '#22c55e'];
 
-// ── Component ────────────────────────────────────────────────────────────────
 export default function AuthScreen() {
   const { signIn, signUp } = useAuth();
 
   const [tab, setTab] = useState<Tab>('login');
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'apple' | null>(null);
-
-  // Verification screen shown after successful sign-up
   const [verificationEmail, setVerificationEmail] = useState('');
 
-  // ── Login fields ─────────────────────────────────────────────────────────
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPw, setShowLoginPw] = useState(false);
 
-  // ── Sign-up fields ────────────────────────────────────────────────────────
   const [fullName, setFullName] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [phoneDigits, setPhoneDigits] = useState('');
@@ -64,7 +74,6 @@ export default function AuthScreen() {
 
   const pwStrength = getPasswordStrength(signupPassword);
 
-  // ── Google / Apple OAuth ─────────────────────────────────────────────────
   const handleOAuth = async (provider: 'google' | 'apple') => {
     setOauthLoading(provider);
     try {
@@ -82,10 +91,7 @@ export default function AuthScreen() {
           const accessToken = params.get('access_token');
           const refreshToken = params.get('refresh_token');
           if (accessToken && refreshToken) {
-            await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
+            await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
           }
         }
       }
@@ -96,7 +102,6 @@ export default function AuthScreen() {
     }
   };
 
-  // ── Login ────────────────────────────────────────────────────────────────
   const handleLogin = async () => {
     if (!loginEmail.trim() || !loginPassword) {
       Alert.alert('Missing fields', 'Please enter your email and password.');
@@ -105,69 +110,36 @@ export default function AuthScreen() {
     setLoading(true);
     const { error } = await signIn(loginEmail.trim().toLowerCase(), loginPassword);
     setLoading(false);
-    if (error) {
-      Alert.alert('Login Failed', error);
-    }
-    // On success AuthContext.session will be set → AppNavigator re-renders → shows (tabs)
+    if (error) Alert.alert('Login Failed', error);
   };
 
-  // ── Register ──────────────────────────────────────────────────────────────
   const handleSignup = async () => {
     if (!fullName.trim() || !signupEmail.trim() || !signupPassword) {
       Alert.alert('Missing fields', 'Full name, email and password are required.');
       return;
     }
-    if (signupPassword.length < 8) {
-      Alert.alert('Weak password', 'Password must be at least 8 characters.');
-      return;
-    }
-    if (signupPassword !== confirmPassword) {
-      Alert.alert('Passwords do not match', 'Please re-enter your password.');
-      return;
-    }
-    if (phoneDigits.length > 0 && !isValidKhPhone(phoneDigits)) {
-      Alert.alert('Invalid phone', 'Please enter a valid Cambodian phone number.');
-      return;
-    }
-    if (!agreedToTerms) {
-      Alert.alert('Terms required', 'Please agree to the Terms of Service.');
-      return;
-    }
+    if (signupPassword.length < 8) { Alert.alert('Weak password', 'Password must be at least 8 characters.'); return; }
+    if (signupPassword !== confirmPassword) { Alert.alert('Passwords do not match', 'Please re-enter your password.'); return; }
+    if (phoneDigits.length > 0 && !isValidKhPhone(phoneDigits)) { Alert.alert('Invalid phone', 'Please enter a valid Cambodian phone number.'); return; }
+    if (!agreedToTerms) { Alert.alert('Terms required', 'Please agree to the Terms of Service.'); return; }
 
     setLoading(true);
-    const { error, needsVerification } = await signUp(
-      signupEmail.trim().toLowerCase(),
-      signupPassword,
-      fullName.trim()
-    );
+    const { error, needsVerification } = await signUp(signupEmail.trim().toLowerCase(), signupPassword, fullName.trim());
     setLoading(false);
 
-    if (error) {
-      Alert.alert('Sign Up Failed', error);
-      return;
-    }
+    if (error) { Alert.alert('Sign Up Failed', error); return; }
 
-    // Save phone number via backend API
     if (phoneDigits.length > 0) {
-      try {
-        await ProfileAPI.update({ phone: composeKhPhone(phoneDigits) });
-      } catch {}
+      try { await ProfileAPI.update({ phone: composeKhPhone(phoneDigits) }); } catch {}
     }
 
     if (needsVerification) {
-      // Show the "check your email" screen
       setVerificationEmail(signupEmail.trim().toLowerCase());
     } else {
-      // Email confirmation is disabled on this project — account ready, ask to log in
-      Alert.alert(
-        'Account Created!',
-        'Your account is ready. Please log in with your email and password.',
-        [{ text: 'Go to Login', onPress: () => setTab('login') }]
-      );
+      Alert.alert('Account Created!', 'Your account is ready. Please log in.', [{ text: 'Go to Login', onPress: () => setTab('login') }]);
     }
   };
 
-  // ── Resend verification email ─────────────────────────────────────────────
   const handleResend = async () => {
     setLoading(true);
     const { error } = await supabase.auth.resend({ type: 'signup', email: verificationEmail });
@@ -176,306 +148,299 @@ export default function AuthScreen() {
     else Alert.alert('Sent!', 'Verification email resent. Check your inbox.');
   };
 
-  // ── Verification screen ───────────────────────────────────────────────────
+  // ── Verification screen ──────────────────────────────────────────────────
   if (verificationEmail) {
     return (
-      <ImageBackground
-        source={require('@/assets/images/auth-hero.jpg')}
-        style={styles.bg}
-        resizeMode="cover"
-      >
-        <View style={styles.overlay} />
-        <SafeAreaView style={styles.safe}>
-          <View style={styles.verifyWrap}>
-            <View style={styles.mailIconBox}>
-              <Text style={styles.mailEmoji}>✉️</Text>
+      <View style={s.bg}>
+        <SafeAreaView style={s.safe}>
+          <View style={s.verifyWrap}>
+            <View style={s.verifyIconRing}>
+              <View style={s.verifyIconInner}>
+                <Text style={s.verifyEmoji}>✉️</Text>
+              </View>
             </View>
-            <Text style={styles.verifyTitle}>Almost there!</Text>
-            <Text style={styles.verifyBody}>
+            <Text style={s.verifyTitle}>Check your inbox</Text>
+            <Text style={s.verifyBody}>
               We sent a verification link to{'\n'}
-              <Text style={styles.verifyEmail}>{verificationEmail}</Text>
-              {'\n\n'}Click the link to activate your account, then come back and log in.
+              <Text style={s.verifyHighlight}>{verificationEmail}</Text>
+              {'\n\n'}Tap the link to activate your account, then come back and log in.
             </Text>
-            <TouchableOpacity
-              style={[styles.outlineBtn, loading && styles.disabled]}
-              onPress={handleResend}
-              disabled={loading}
-            >
+            <TouchableOpacity style={[s.goldBtn, loading && s.disabled]} onPress={handleResend} disabled={loading}>
               {loading
-                ? <ActivityIndicator color="#374151" size="small" />
-                : <Text style={styles.outlineBtnText}>Resend Email</Text>
-              }
+                ? <ActivityIndicator color={C.navy} size="small" />
+                : <Text style={s.goldBtnText}>Resend Email</Text>}
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => { setVerificationEmail(''); setTab('login'); }}
-            >
-              <Text style={styles.link}>← Back to Login</Text>
+            <TouchableOpacity style={s.ghostBtn} onPress={() => { setVerificationEmail(''); setTab('login'); }}>
+              <Text style={s.ghostBtnText}>← Back to Login</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
-      </ImageBackground>
+      </View>
     );
   }
 
-  // ── Main auth card ────────────────────────────────────────────────────────
+  // ── Main screen ──────────────────────────────────────────────────────────
   return (
-    <ImageBackground
-      source={require('@/assets/images/auth-hero.jpg')}
-      style={styles.bg}
-      resizeMode="cover"
-    >
-      <View style={styles.overlay} />
-      <SafeAreaView style={styles.safe}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+    <View style={s.bg}>
+      <SafeAreaView style={s.safe}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView
-            contentContainerStyle={styles.scroll}
+            contentContainerStyle={s.scroll}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.card}>
 
-              {/* ─ Logo ─ */}
-              <View style={styles.logoRow}>
-                <View style={styles.logoBox}>
-                  <Text style={styles.logoEmoji}>🛺</Text>
+            {/* ── Hero / Branding ── */}
+            <View style={s.hero}>
+              <View style={s.logoRing}>
+                <View style={s.logoInner}>
+                  <Text style={s.logoEmoji}>🛺</Text>
                 </View>
-                <Text style={styles.logoName}>jih</Text>
               </View>
-              <Text style={styles.subtitle}>Passenger Account</Text>
+              <Text style={s.appName}>jih</Text>
+              <Text style={s.tagline}>Cambodia's community ride</Text>
+            </View>
 
-              {/* ─ Google ─ */}
+            {/* ── Social Login ── */}
+            <View style={s.socialRow}>
               <TouchableOpacity
-                style={styles.oauthBtn}
+                style={s.socialBtn}
                 onPress={() => handleOAuth('google')}
                 disabled={!!oauthLoading}
               >
                 {oauthLoading === 'google'
-                  ? <ActivityIndicator size="small" color="#374151" />
-                  : <GoogleIcon />
+                  ? <ActivityIndicator size="small" color={C.white} />
+                  : <>
+                      <View style={s.gIconWrap}><Text style={s.gIconText}>G</Text></View>
+                      <Text style={s.socialBtnText}>Google</Text>
+                    </>
                 }
-                <Text style={styles.oauthBtnText}>Continue with Google</Text>
               </TouchableOpacity>
 
-              {/* ─ Apple ─ */}
               <TouchableOpacity
-                style={[styles.oauthBtn, styles.appleBtn]}
+                style={[s.socialBtn, s.appleSocialBtn]}
                 onPress={() => handleOAuth('apple')}
                 disabled={!!oauthLoading}
               >
                 {oauthLoading === 'apple'
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={styles.appleIcon}></Text>
+                  ? <ActivityIndicator size="small" color={C.white} />
+                  : <>
+                      <Text style={s.appleIconText}></Text>
+                      <Text style={s.socialBtnText}>Apple</Text>
+                    </>
                 }
-                <Text style={[styles.oauthBtnText, { color: '#fff' }]}>Continue with Apple</Text>
               </TouchableOpacity>
-
-              {/* ─ Divider ─ */}
-              <View style={styles.divider}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>or continue with email</Text>
-                <View style={styles.dividerLine} />
-              </View>
-
-              {/* ─ Tab switcher ─ */}
-              <View style={styles.tabs}>
-                {(['login', 'signup'] as Tab[]).map(t => (
-                  <TouchableOpacity
-                    key={t}
-                    style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
-                    onPress={() => setTab(t)}
-                  >
-                    <Text style={[styles.tabBtnText, tab === t && styles.tabBtnTextActive]}>
-                      {t === 'login' ? 'Log In' : 'Sign Up'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* ════════════ LOGIN ════════════ */}
-              {tab === 'login' && (
-                <View style={styles.form}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Email"
-                    placeholderTextColor="#9ca3af"
-                    value={loginEmail}
-                    onChangeText={setLoginEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    autoComplete="email"
-                    returnKeyType="next"
-                  />
-
-                  <PwField
-                    placeholder="Password"
-                    value={loginPassword}
-                    onChange={setLoginPassword}
-                    show={showLoginPw}
-                    toggle={() => setShowLoginPw(v => !v)}
-                    returnKeyType="done"
-                    onSubmit={handleLogin}
-                  />
-
-                  <TouchableOpacity
-                    style={[styles.primaryBtn, loading && styles.disabled]}
-                    onPress={handleLogin}
-                    disabled={loading}
-                  >
-                    {loading
-                      ? <ActivityIndicator color="#1A2744" size="small" />
-                      : <Text style={styles.primaryBtnText}>Log In →</Text>
-                    }
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() =>
-                      Alert.alert(
-                        'Reset Password',
-                        'Open the Jih web app to reset your password, then log in here.',
-                        [{ text: 'OK' }]
-                      )
-                    }
-                  >
-                    <Text style={[styles.link, { textAlign: 'center' }]}>Forgot password?</Text>
-                  </TouchableOpacity>
-
-                  <Text style={styles.switchText}>
-                    No account?{' '}
-                    <Text style={styles.switchLink} onPress={() => setTab('signup')}>Sign Up</Text>
-                  </Text>
-                </View>
-              )}
-
-              {/* ════════════ SIGN UP ════════════ */}
-              {tab === 'signup' && (
-                <View style={styles.form}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Full Name"
-                    placeholderTextColor="#9ca3af"
-                    value={fullName}
-                    onChangeText={setFullName}
-                    autoCapitalize="words"
-                    returnKeyType="next"
-                  />
-
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Email"
-                    placeholderTextColor="#9ca3af"
-                    value={signupEmail}
-                    onChangeText={setSignupEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    autoComplete="email"
-                    returnKeyType="next"
-                  />
-
-                  {/* +855 phone */}
-                  <View style={styles.phoneRow}>
-                    <View style={styles.phonePrefixBox}>
-                      <Text style={styles.phonePrefixText}>+855</Text>
-                    </View>
-                    <TextInput
-                      style={styles.phoneInput}
-                      placeholder="XX XXX XXXX (optional)"
-                      placeholderTextColor="#9ca3af"
-                      value={formatKhMask(phoneDigits)}
-                      onChangeText={v => setPhoneDigits(sanitizeKhDigits(v))}
-                      keyboardType="phone-pad"
-                      maxLength={12}
-                    />
-                  </View>
-                  {phoneDigits.length > 0 && !isValidKhPhone(phoneDigits) && (
-                    <Text style={styles.fieldError}>Please enter a valid Cambodian phone number.</Text>
-                  )}
-
-                  <PwField
-                    placeholder="Password (min. 8 characters)"
-                    value={signupPassword}
-                    onChange={setSignupPassword}
-                    show={showSignupPw}
-                    toggle={() => setShowSignupPw(v => !v)}
-                  />
-                  {signupPassword.length > 0 && (
-                    <View style={styles.strengthWrap}>
-                      <View style={styles.strengthBg}>
-                        <View
-                          style={[
-                            styles.strengthFill,
-                            {
-                              width: `${pwStrength * 25}%` as any,
-                              backgroundColor: STRENGTH_COLOR[pwStrength],
-                            },
-                          ]}
-                        />
-                      </View>
-                      <Text style={[styles.strengthLabel, { color: STRENGTH_COLOR[pwStrength] }]}>
-                        {STRENGTH_LABEL[pwStrength]}
-                      </Text>
-                    </View>
-                  )}
-
-                  <PwField
-                    placeholder="Confirm Password"
-                    value={confirmPassword}
-                    onChange={setConfirmPassword}
-                    show={showConfirmPw}
-                    toggle={() => setShowConfirmPw(v => !v)}
-                  />
-                  {confirmPassword.length > 0 && signupPassword !== confirmPassword && (
-                    <Text style={styles.fieldError}>Passwords do not match.</Text>
-                  )}
-
-                  {/* Terms checkbox */}
-                  <TouchableOpacity
-                    style={styles.termsRow}
-                    onPress={() => setAgreedToTerms(v => !v)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.checkbox, agreedToTerms && styles.checkboxOn]}>
-                      {agreedToTerms && <Text style={styles.checkmark}>✓</Text>}
-                    </View>
-                    <Text style={styles.termsText}>
-                      I agree to the{' '}
-                      <Text style={styles.termsLink}>Terms of Service</Text>
-                      {' '}and{' '}
-                      <Text style={styles.termsLink}>Privacy Policy</Text>
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.primaryBtn, (!agreedToTerms || loading) && styles.disabled]}
-                    onPress={handleSignup}
-                    disabled={!agreedToTerms || loading}
-                  >
-                    {loading
-                      ? <ActivityIndicator color="#1A2744" size="small" />
-                      : <Text style={styles.primaryBtnText}>Create Account →</Text>
-                    }
-                  </TouchableOpacity>
-
-                  <Text style={styles.switchText}>
-                    Already have an account?{' '}
-                    <Text style={styles.switchLink} onPress={() => setTab('login')}>Log In</Text>
-                  </Text>
-                </View>
-              )}
-
             </View>
+
+            {/* ── Divider ── */}
+            <View style={s.divider}>
+              <View style={s.dividerLine} />
+              <Text style={s.dividerText}>or use email</Text>
+              <View style={s.dividerLine} />
+            </View>
+
+            {/* ── Tab switcher ── */}
+            <View style={s.tabBar}>
+              {(['login', 'signup'] as Tab[]).map(t => (
+                <TouchableOpacity
+                  key={t}
+                  style={[s.tabBtn, tab === t && s.tabBtnActive]}
+                  onPress={() => setTab(t)}
+                >
+                  <Text style={[s.tabBtnText, tab === t && s.tabBtnTextActive]}>
+                    {t === 'login' ? 'Log In' : 'Sign Up'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* ════ LOGIN ════ */}
+            {tab === 'login' && (
+              <View style={s.form}>
+                <GlassInput
+                  placeholder="Email address"
+                  value={loginEmail}
+                  onChangeText={setLoginEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  returnKeyType="next"
+                  icon="✉"
+                />
+                <GlassPwField
+                  placeholder="Password"
+                  value={loginPassword}
+                  onChange={setLoginPassword}
+                  show={showLoginPw}
+                  toggle={() => setShowLoginPw(v => !v)}
+                  returnKeyType="done"
+                  onSubmit={handleLogin}
+                />
+
+                <TouchableOpacity
+                  style={[s.goldBtn, loading && s.disabled]}
+                  onPress={handleLogin}
+                  disabled={loading}
+                >
+                  {loading
+                    ? <ActivityIndicator color={C.navy} size="small" />
+                    : <Text style={s.goldBtnText}>Log In →</Text>}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={s.forgotWrap}
+                  onPress={() => Alert.alert('Reset Password', 'Open the Jih web app to reset your password, then log in here.')}
+                >
+                  <Text style={s.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+
+                <Text style={s.switchText}>
+                  No account?{'  '}
+                  <Text style={s.switchLink} onPress={() => setTab('signup')}>Sign Up</Text>
+                </Text>
+              </View>
+            )}
+
+            {/* ════ SIGN UP ════ */}
+            {tab === 'signup' && (
+              <View style={s.form}>
+                <GlassInput
+                  placeholder="Full name"
+                  value={fullName}
+                  onChangeText={setFullName}
+                  autoCapitalize="words"
+                  returnKeyType="next"
+                  icon="👤"
+                />
+                <GlassInput
+                  placeholder="Email address"
+                  value={signupEmail}
+                  onChangeText={setSignupEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  returnKeyType="next"
+                  icon="✉"
+                />
+
+                {/* Phone */}
+                <View style={s.phoneRow}>
+                  <View style={s.phonePrefixWrap}>
+                    <Text style={s.phoneFlag}>🇰🇭</Text>
+                    <Text style={s.phonePrefix}>+855</Text>
+                  </View>
+                  <TextInput
+                    style={s.phoneInput}
+                    placeholder="XX XXX XXXX (optional)"
+                    placeholderTextColor={C.white35}
+                    value={formatKhMask(phoneDigits)}
+                    onChangeText={v => setPhoneDigits(sanitizeKhDigits(v))}
+                    keyboardType="phone-pad"
+                    maxLength={12}
+                  />
+                </View>
+                {phoneDigits.length > 0 && !isValidKhPhone(phoneDigits) && (
+                  <Text style={s.fieldError}>⚠ Invalid Cambodian phone number</Text>
+                )}
+
+                <GlassPwField
+                  placeholder="Password (min. 8 characters)"
+                  value={signupPassword}
+                  onChange={setSignupPassword}
+                  show={showSignupPw}
+                  toggle={() => setShowSignupPw(v => !v)}
+                />
+                {signupPassword.length > 0 && (
+                  <View style={s.strengthWrap}>
+                    <View style={s.strengthTrack}>
+                      <View style={[s.strengthFill, { width: `${pwStrength * 25}%` as any, backgroundColor: STRENGTH_COLOR[pwStrength] }]} />
+                    </View>
+                    <Text style={[s.strengthLabel, { color: STRENGTH_COLOR[pwStrength] }]}>
+                      {STRENGTH_LABEL[pwStrength]}
+                    </Text>
+                  </View>
+                )}
+
+                <GlassPwField
+                  placeholder="Confirm password"
+                  value={confirmPassword}
+                  onChange={setConfirmPassword}
+                  show={showConfirmPw}
+                  toggle={() => setShowConfirmPw(v => !v)}
+                />
+                {confirmPassword.length > 0 && signupPassword !== confirmPassword && (
+                  <Text style={s.fieldError}>⚠ Passwords do not match</Text>
+                )}
+
+                {/* Terms */}
+                <TouchableOpacity style={s.termsRow} onPress={() => setAgreedToTerms(v => !v)} activeOpacity={0.7}>
+                  <View style={[s.checkbox, agreedToTerms && s.checkboxOn]}>
+                    {agreedToTerms && <Text style={s.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={s.termsText}>
+                    I agree to the <Text style={s.termsLink}>Terms of Service</Text> and <Text style={s.termsLink}>Privacy Policy</Text>
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.goldBtn, (!agreedToTerms || loading) && s.disabled]}
+                  onPress={handleSignup}
+                  disabled={!agreedToTerms || loading}
+                >
+                  {loading
+                    ? <ActivityIndicator color={C.navy} size="small" />
+                    : <Text style={s.goldBtnText}>Create Account →</Text>}
+                </TouchableOpacity>
+
+                <Text style={s.switchText}>
+                  Already have an account?{'  '}
+                  <Text style={s.switchLink} onPress={() => setTab('login')}>Log In</Text>
+                </Text>
+              </View>
+            )}
+
+            <View style={{ height: 32 }} />
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
-    </ImageBackground>
+    </View>
   );
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Glass Input ───────────────────────────────────────────────────────────────
+function GlassInput({
+  placeholder, value, onChangeText, keyboardType, autoCapitalize,
+  autoComplete, returnKeyType, icon,
+}: {
+  placeholder: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  keyboardType?: any;
+  autoCapitalize?: any;
+  autoComplete?: any;
+  returnKeyType?: any;
+  icon?: string;
+}) {
+  return (
+    <View style={s.glassInputRow}>
+      {icon && <Text style={s.inputIcon}>{icon}</Text>}
+      <TextInput
+        style={s.glassInput}
+        placeholder={placeholder}
+        placeholderTextColor={C.white35}
+        value={value}
+        onChangeText={onChangeText}
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize}
+        autoComplete={autoComplete}
+        returnKeyType={returnKeyType}
+      />
+    </View>
+  );
+}
 
-function PwField({
+// ── Glass Password Field ──────────────────────────────────────────────────────
+function GlassPwField({
   placeholder, value, onChange, show, toggle, returnKeyType, onSubmit,
 }: {
   placeholder: string;
@@ -487,11 +452,12 @@ function PwField({
   onSubmit?: () => void;
 }) {
   return (
-    <View style={styles.pwRow}>
+    <View style={s.glassInputRow}>
+      <Text style={s.inputIcon}>🔒</Text>
       <TextInput
-        style={[styles.input, styles.pwInput]}
+        style={[s.glassInput, { flex: 1 }]}
         placeholder={placeholder}
-        placeholderTextColor="#9ca3af"
+        placeholderTextColor={C.white35}
         value={value}
         onChangeText={onChange}
         secureTextEntry={!show}
@@ -499,108 +465,113 @@ function PwField({
         returnKeyType={returnKeyType ?? 'done'}
         onSubmitEditing={onSubmit}
       />
-      <TouchableOpacity style={styles.eyeBtn} onPress={toggle}>
-        <Text style={styles.eyeIcon}>{show ? '🙈' : '👁️'}</Text>
+      <TouchableOpacity onPress={toggle} style={s.eyeBtn}>
+        <Text style={s.eyeIcon}>{show ? '🙈' : '👁️'}</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-function GoogleIcon() {
-  return (
-    <View style={gS.wrap}>
-      <Text style={gS.g}>G</Text>
-    </View>
-  );
-}
-const gS = StyleSheet.create({
-  wrap: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  g: { fontSize: 12, fontWeight: '700', color: '#4285F4', lineHeight: 16 },
-});
-
 // ── Styles ────────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  bg: { flex: 1 },
-  overlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(26,39,68,0.65)' },
-  safe: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 24 },
+const s = StyleSheet.create({
+  bg:      { flex: 1, backgroundColor: C.navy },
+  safe:    { flex: 1 },
+  scroll:  { flexGrow: 1, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 24 },
 
-  // ── verification ──
-  verifyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  mailIconBox: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  mailEmoji: { fontSize: 36 },
-  verifyTitle: { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 12, textAlign: 'center' },
-  verifyBody: { fontSize: 15, color: 'rgba(255,255,255,0.85)', textAlign: 'center', lineHeight: 23, marginBottom: 24 },
-  verifyEmail: { fontWeight: '700', color: '#D4AF37' },
-  outlineBtn: { borderWidth: 1.5, borderColor: '#d1d5db', borderRadius: 10, paddingVertical: 14, paddingHorizontal: 32, alignItems: 'center', marginBottom: 16, backgroundColor: '#fff', width: '100%', maxWidth: 380 },
-  outlineBtnText: { color: '#374151', fontWeight: '600', fontSize: 14 },
+  // ── hero ──
+  hero: { alignItems: 'center', marginBottom: 28, marginTop: 8 },
+  logoRing: { width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderColor: C.gold, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  logoInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.goldDim, alignItems: 'center', justifyContent: 'center' },
+  logoEmoji: { fontSize: 30 },
+  appName:  { fontSize: 38, fontWeight: '800', color: C.white, letterSpacing: 3, marginBottom: 4 },
+  tagline:  { fontSize: 13, color: C.white60, letterSpacing: 0.5 },
 
-  // ── card ──
-  card: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 440 },
-
-  // ── logo ──
-  logoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 },
-  logoBox: { width: 44, height: 44, borderRadius: 10, backgroundColor: '#1A2744', alignItems: 'center', justifyContent: 'center' },
-  logoEmoji: { fontSize: 24 },
-  logoName: { fontSize: 28, fontWeight: '800', color: '#1A2744', letterSpacing: 1 },
-  subtitle: { textAlign: 'center', fontSize: 14, color: '#6b7280', marginBottom: 20, marginTop: 2 },
-
-  // ── oauth ──
-  oauthBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 10, paddingVertical: 13, marginBottom: 8, backgroundColor: '#fff' },
-  appleBtn: { backgroundColor: '#111', borderColor: '#111', marginBottom: 0 },
-  oauthBtnText: { fontSize: 14, fontWeight: '600', color: '#374151' },
-  appleIcon: { fontSize: 18, color: '#fff', lineHeight: 20 },
+  // ── social ──
+  socialRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  socialBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: C.white12, borderWidth: 1, borderColor: C.white18,
+    borderRadius: 14, paddingVertical: 14,
+  },
+  appleSocialBtn: { backgroundColor: 'rgba(0,0,0,0.4)', borderColor: C.white18 },
+  socialBtnText: { fontSize: 14, fontWeight: '600', color: C.white },
+  gIconWrap: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  gIconText: { fontSize: 11, fontWeight: '800', color: '#4285F4', lineHeight: 14 },
+  appleIconText: { fontSize: 17, color: C.white, lineHeight: 20 },
 
   // ── divider ──
-  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 18, gap: 8 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#e5e7eb' },
-  dividerText: { fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: C.white18 },
+  dividerText: { fontSize: 11, color: C.white35, textTransform: 'uppercase', letterSpacing: 1 },
 
-  // ── tabs ──
-  tabs: { flexDirection: 'row', backgroundColor: '#f3f4f6', borderRadius: 10, padding: 3, marginBottom: 20 },
-  tabBtn: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 8 },
-  tabBtnActive: { backgroundColor: '#fff' },
-  tabBtnText: { fontSize: 14, fontWeight: '500', color: '#9ca3af' },
-  tabBtnTextActive: { color: '#1A2744', fontWeight: '700' },
+  // ── tab bar ──
+  tabBar: { flexDirection: 'row', backgroundColor: C.white08, borderRadius: 14, padding: 4, marginBottom: 22, borderWidth: 1, borderColor: C.white12 },
+  tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 11 },
+  tabBtnActive: { backgroundColor: C.gold },
+  tabBtnText: { fontSize: 14, fontWeight: '600', color: C.white60 },
+  tabBtnTextActive: { color: C.navy, fontWeight: '800' },
 
   // ── form ──
-  form: { gap: 12 },
-  input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: '#111', backgroundColor: '#fff' },
+  form: { gap: 13 },
 
-  // ── phone ──
-  phoneRow: { flexDirection: 'row', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden' },
-  phonePrefixBox: { paddingHorizontal: 12, justifyContent: 'center', backgroundColor: '#f3f4f6', borderRightWidth: 1, borderRightColor: '#e5e7eb' },
-  phonePrefixText: { fontSize: 14, color: '#6b7280', fontWeight: '500' },
-  phoneInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: '#111', backgroundColor: '#fff' },
+  // ── glass input ──
+  glassInputRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder,
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13,
+  },
+  inputIcon: { fontSize: 15, width: 20, textAlign: 'center', opacity: 0.6 },
+  glassInput: { flex: 1, fontSize: 14, color: C.white },
 
-  // ── password field ──
-  pwRow: { flexDirection: 'row', alignItems: 'center' },
-  pwInput: { flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRightWidth: 0 },
-  eyeBtn: { borderWidth: 1, borderColor: '#e5e7eb', borderLeftWidth: 0, borderTopRightRadius: 10, borderBottomRightRadius: 10, paddingHorizontal: 12, paddingVertical: 13, backgroundColor: '#fff' },
+  // ── eye ──
+  eyeBtn: { paddingLeft: 8 },
   eyeIcon: { fontSize: 16 },
 
+  // ── phone ──
+  phoneRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder,
+    borderRadius: 14, overflow: 'hidden',
+  },
+  phonePrefixWrap: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 13, borderRightWidth: 1, borderRightColor: C.inputBorder },
+  phoneFlag: { fontSize: 16 },
+  phonePrefix: { fontSize: 13, color: C.white60, fontWeight: '600' },
+  phoneInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: C.white },
+
   // ── strength ──
-  strengthWrap: { gap: 4, marginTop: -4 },
-  strengthBg: { height: 5, backgroundColor: '#e5e7eb', borderRadius: 3, overflow: 'hidden' },
-  strengthFill: { height: '100%', borderRadius: 3 },
-  strengthLabel: { fontSize: 11, fontWeight: '500' },
+  strengthWrap: { gap: 5, marginTop: -4 },
+  strengthTrack: { height: 4, backgroundColor: C.white12, borderRadius: 2, overflow: 'hidden' },
+  strengthFill: { height: '100%', borderRadius: 2 },
+  strengthLabel: { fontSize: 11, fontWeight: '600' },
 
   // ── terms ──
   termsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, borderColor: '#d1d5db', marginTop: 1, alignItems: 'center', justifyContent: 'center' },
-  checkboxOn: { backgroundColor: '#1A2744', borderColor: '#1A2744' },
-  checkmark: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  termsText: { flex: 1, fontSize: 13, color: '#6b7280', lineHeight: 20 },
-  termsLink: { color: '#1A2744', fontWeight: '600' },
+  checkbox: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: C.white35, marginTop: 1, alignItems: 'center', justifyContent: 'center' },
+  checkboxOn: { backgroundColor: C.gold, borderColor: C.gold },
+  checkmark: { color: C.navy, fontSize: 12, fontWeight: '800' },
+  termsText: { flex: 1, fontSize: 12, color: C.white60, lineHeight: 19 },
+  termsLink: { color: C.gold, fontWeight: '600' },
 
   // ── buttons ──
-  primaryBtn: { backgroundColor: '#1A2744', borderRadius: 10, paddingVertical: 15, alignItems: 'center' },
-  disabled: { opacity: 0.45 },
-  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  goldBtn: { backgroundColor: C.gold, borderRadius: 14, paddingVertical: 16, alignItems: 'center', shadowColor: C.gold, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
+  goldBtnText: { color: C.navy, fontWeight: '800', fontSize: 15, letterSpacing: 0.3 },
+  ghostBtn: { alignItems: 'center', paddingVertical: 12 },
+  ghostBtnText: { color: C.white60, fontSize: 13, fontWeight: '600' },
+  disabled: { opacity: 0.40 },
 
-  // ── misc ──
-  link: { color: '#1A2744', fontSize: 13, fontWeight: '600' },
-  switchText: { textAlign: 'center', fontSize: 13, color: '#6b7280' },
-  switchLink: { color: '#1A2744', fontWeight: '600' },
-  fieldError: { fontSize: 11, color: '#ef4444', marginTop: -4 },
+  forgotWrap: { alignItems: 'center', marginTop: -2 },
+  forgotText: { color: C.gold, fontSize: 13, fontWeight: '600' },
+
+  switchText: { textAlign: 'center', fontSize: 13, color: C.white60 },
+  switchLink: { color: C.gold, fontWeight: '700' },
+  fieldError: { fontSize: 11, color: C.red, marginTop: -4 },
+
+  // ── verification ──
+  verifyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  verifyIconRing: { width: 96, height: 96, borderRadius: 48, borderWidth: 2, borderColor: C.gold, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
+  verifyIconInner: { width: 76, height: 76, borderRadius: 38, backgroundColor: C.goldDim, alignItems: 'center', justifyContent: 'center' },
+  verifyEmoji: { fontSize: 36 },
+  verifyTitle: { fontSize: 26, fontWeight: '800', color: C.white, marginBottom: 14, textAlign: 'center' },
+  verifyBody: { fontSize: 15, color: C.white60, textAlign: 'center', lineHeight: 24, marginBottom: 28 },
+  verifyHighlight: { fontWeight: '700', color: C.gold },
 });
