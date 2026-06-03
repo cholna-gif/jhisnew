@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { ProfileAPI } from '@/lib/api';
+import { AuthAPI, ProfileAPI } from '@/lib/api';
 import { Profile } from '@/types';
 
 interface AuthContextValue {
@@ -13,7 +13,8 @@ interface AuthContextValue {
   signUp: (
     email: string,
     password: string,
-    fullName: string
+    fullName: string,
+    phone?: string
   ) => Promise<{ error: string | null; needsVerification: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -60,47 +61,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ── Login ─────────────────────────────────────────────────────────────────
   const signIn = async (email: string, password: string): Promise<{ error: string | null }> => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
+    if (!data.user?.email_confirmed_at) {
+      await supabase.auth.signOut();
+      return { error: 'Please verify your email before logging in.' };
+    }
     return { error: null };
   };
 
   // ── Register ──────────────────────────────────────────────────────────────
-  // Registration NEVER signs the user in automatically.  After a successful
-  // sign-up we:
-  //   1. Create profile + user_roles rows (same tables jihwolrd uses)
-  //   2. Sign the user OUT so they must log in manually (jihwolrd behaviour)
-  //   3. Return needsVerification=true so the UI can show the email check screen
   const signUp = async (
     email: string,
     password: string,
-    fullName: string
+    fullName: string,
+    phone?: string
   ): Promise<{ error: string | null; needsVerification: boolean }> => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName, role: 'passenger' },
-      },
-    });
-
-    if (error) return { error: error.message, needsVerification: false };
-
-    const newUser = data.user;
-    if (!newUser) return { error: 'Could not create account', needsVerification: false };
-
-    // Create profile + user_roles via backend API
-    await ProfileAPI.create(fullName, email);
-
-    // If Supabase returned an active session (email confirm disabled), sign out.
-    // We always want the user to log in manually, just like on jihwolrd.
-    if (data.session) {
-      await supabase.auth.signOut();
+    try {
+      const result = await AuthAPI.signUp(fullName, email, password, phone);
+      return { error: null, needsVerification: result.needsVerification };
+    } catch (err: any) {
+      return { error: err.message ?? 'Could not create account', needsVerification: false };
     }
-
-    // needsVerification is true when the email is not yet confirmed
-    const needsVerification = !newUser.email_confirmed_at;
-    return { error: null, needsVerification };
   };
 
   // ── Sign Out ──────────────────────────────────────────────────────────────

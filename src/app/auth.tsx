@@ -16,12 +16,13 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ProfileAPI } from '@/lib/api';
+import { AuthAPI } from '@/lib/api';
 import { formatKhMask, sanitizeKhDigits, isValidKhPhone, composeKhPhone } from '@/lib/phone';
 
 WebBrowser.maybeCompleteAuthSession();
 
 type Tab = 'login' | 'signup';
+type ResetStep = 'request' | 'confirm';
 
 const C = {
   navy:       '#0D1B36',
@@ -58,6 +59,16 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'apple' | null>(null);
   const [verificationEmail, setVerificationEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationAction, setVerificationAction] = useState<'verify' | 'resend' | null>(null);
+  const [resetStep, setResetStep] = useState<ResetStep | null>(null);
+  const [resetAction, setResetAction] = useState<'send' | 'reset' | 'resend' | null>(null);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [showResetPw, setShowResetPw] = useState(false);
+  const [showResetConfirmPw, setShowResetConfirmPw] = useState(false);
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -124,29 +135,207 @@ export default function AuthScreen() {
     if (!agreedToTerms) { Alert.alert('Terms required', 'Please agree to the Terms of Service.'); return; }
 
     setLoading(true);
-    const { error, needsVerification } = await signUp(signupEmail.trim().toLowerCase(), signupPassword, fullName.trim());
+    const email = signupEmail.trim().toLowerCase();
+    const phone = phoneDigits.length > 0 ? composeKhPhone(phoneDigits) : undefined;
+    const { error, needsVerification } = await signUp(email, signupPassword, fullName.trim(), phone);
     setLoading(false);
 
     if (error) { Alert.alert('Sign Up Failed', error); return; }
 
-    if (phoneDigits.length > 0) {
-      try { await ProfileAPI.update({ phone: composeKhPhone(phoneDigits) }); } catch {}
-    }
-
     if (needsVerification) {
-      setVerificationEmail(signupEmail.trim().toLowerCase());
+      setVerificationEmail(email);
+      setVerificationCode('');
     } else {
       Alert.alert('Account Created!', 'Your account is ready. Please log in.', [{ text: 'Go to Login', onPress: () => setTab('login') }]);
     }
   };
 
   const handleResend = async () => {
-    setLoading(true);
-    const { error } = await supabase.auth.resend({ type: 'signup', email: verificationEmail });
-    setLoading(false);
-    if (error) Alert.alert('Error', error.message);
-    else Alert.alert('Sent!', 'Verification email resent. Check your inbox.');
+    setVerificationAction('resend');
+    try {
+      await AuthAPI.resendVerification(verificationEmail);
+      setVerificationCode('');
+      Alert.alert('Sent!', 'Verification code resent. Check your inbox.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message ?? 'Could not resend verification code.');
+    }
+    setVerificationAction(null);
   };
+
+  const handleVerifyEmail = async () => {
+    if (verificationCode.length !== 6) {
+      Alert.alert('Missing code', 'Enter the 6-digit code from your email.');
+      return;
+    }
+
+    setVerificationAction('verify');
+    try {
+      await AuthAPI.verifyEmail(verificationEmail, verificationCode);
+      setLoginEmail(verificationEmail);
+      setVerificationEmail('');
+      setVerificationCode('');
+      setTab('login');
+      Alert.alert('Email verified', 'Your account is ready. Please log in.');
+    } catch (err: any) {
+      Alert.alert('Verification Failed', err.message ?? 'Could not verify email.');
+    }
+    setVerificationAction(null);
+  };
+
+  const openResetPassword = () => {
+    setResetEmail(loginEmail.trim().toLowerCase());
+    setResetCode('');
+    setResetPassword('');
+    setResetConfirmPassword('');
+    setResetStep('request');
+  };
+
+  const handleRequestReset = async (isResend = false) => {
+    const email = resetEmail.trim().toLowerCase();
+    if (!email) {
+      Alert.alert('Missing email', 'Enter your email address first.');
+      return;
+    }
+
+    setResetAction(isResend ? 'resend' : 'send');
+    try {
+      await AuthAPI.requestPasswordReset(email);
+      setResetEmail(email);
+      setResetCode('');
+      setResetStep('confirm');
+      if (isResend) Alert.alert('Sent!', 'Reset code resent. Check your inbox.');
+    } catch (err: any) {
+      Alert.alert('Reset Failed', err.message ?? 'Could not send reset code.');
+    }
+    setResetAction(null);
+  };
+
+  const handleResetPassword = async () => {
+    if (resetCode.length !== 6) {
+      Alert.alert('Missing code', 'Enter the 6-digit code from your email.');
+      return;
+    }
+    if (resetPassword.length < 8) {
+      Alert.alert('Weak password', 'Password must be at least 8 characters.');
+      return;
+    }
+    if (resetPassword !== resetConfirmPassword) {
+      Alert.alert('Passwords do not match', 'Please re-enter your password.');
+      return;
+    }
+
+    setResetAction('reset');
+    try {
+      await AuthAPI.resetPassword(resetEmail, resetCode, resetPassword);
+      setLoginEmail(resetEmail);
+      setResetStep(null);
+      setResetCode('');
+      setResetPassword('');
+      setResetConfirmPassword('');
+      Alert.alert('Password reset', 'Your password was updated. Please log in.');
+    } catch (err: any) {
+      Alert.alert('Reset Failed', err.message ?? 'Could not reset password.');
+    }
+    setResetAction(null);
+  };
+
+  // ── Reset password screen ─────────────────────────────────────────────────
+  if (resetStep) {
+    return (
+      <View style={s.bg}>
+        <SafeAreaView style={s.safe}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={s.verifyWrap}>
+              <View style={s.verifyIconRing}>
+                <View style={s.verifyIconInner}>
+                  <Text style={s.verifyEmoji}>🔒</Text>
+                </View>
+              </View>
+              <Text style={s.verifyTitle}>Reset password</Text>
+              {resetStep === 'request' ? (
+                <View style={s.resetForm}>
+                  <Text style={s.verifyBody}>Enter your account email and we will send a 6-digit reset code.</Text>
+                  <GlassInput
+                    placeholder="Email address"
+                    value={resetEmail}
+                    onChangeText={setResetEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    returnKeyType="done"
+                    icon="✉"
+                  />
+                  <TouchableOpacity
+                    style={[s.goldBtn, resetAction && s.disabled]}
+                    onPress={() => handleRequestReset(false)}
+                    disabled={!!resetAction}
+                  >
+                    {resetAction === 'send'
+                      ? <ActivityIndicator color={C.navy} size="small" />
+                      : <Text style={s.goldBtnText}>Send Reset Code</Text>}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={s.resetForm}>
+                  <Text style={s.verifyBody}>
+                    Enter the code sent to{'\n'}
+                    <Text style={s.verifyHighlight}>{resetEmail}</Text>
+                  </Text>
+                  <View style={s.codeInputRow}>
+                    <TextInput
+                      style={s.codeInput}
+                      placeholder="000000"
+                      placeholderTextColor={C.white35}
+                      value={resetCode}
+                      onChangeText={value => setResetCode(value.replace(/\D/g, '').slice(0, 6))}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      textContentType="oneTimeCode"
+                    />
+                  </View>
+                  <GlassPwField
+                    placeholder="New password"
+                    value={resetPassword}
+                    onChange={setResetPassword}
+                    show={showResetPw}
+                    toggle={() => setShowResetPw(v => !v)}
+                  />
+                  <GlassPwField
+                    placeholder="Confirm new password"
+                    value={resetConfirmPassword}
+                    onChange={setResetConfirmPassword}
+                    show={showResetConfirmPw}
+                    toggle={() => setShowResetConfirmPw(v => !v)}
+                  />
+                  <TouchableOpacity
+                    style={[s.goldBtn, resetAction && s.disabled]}
+                    onPress={handleResetPassword}
+                    disabled={!!resetAction}
+                  >
+                    {resetAction === 'reset'
+                      ? <ActivityIndicator color={C.navy} size="small" />
+                      : <Text style={s.goldBtnText}>Update Password</Text>}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.ghostBtn, resetAction && s.disabled]}
+                    onPress={() => handleRequestReset(true)}
+                    disabled={!!resetAction}
+                  >
+                    <Text style={s.ghostBtnText}>
+                      {resetAction === 'resend' ? 'Sending...' : 'Resend Code'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              <TouchableOpacity style={s.ghostBtn} onPress={() => setResetStep(null)}>
+                <Text style={s.ghostBtnText}>← Back to Login</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   // ── Verification screen ──────────────────────────────────────────────────
   if (verificationEmail) {
@@ -161,14 +350,39 @@ export default function AuthScreen() {
             </View>
             <Text style={s.verifyTitle}>Check your inbox</Text>
             <Text style={s.verifyBody}>
-              We sent a verification link to{'\n'}
+              We sent a 6-digit confirmation code to{'\n'}
               <Text style={s.verifyHighlight}>{verificationEmail}</Text>
-              {'\n\n'}Tap the link to activate your account, then come back and log in.
+              {'\n\n'}Enter it here to activate your account.
             </Text>
-            <TouchableOpacity style={[s.goldBtn, loading && s.disabled]} onPress={handleResend} disabled={loading}>
-              {loading
+            <View style={s.codeInputRow}>
+              <TextInput
+                style={s.codeInput}
+                placeholder="000000"
+                placeholderTextColor={C.white35}
+                value={verificationCode}
+                onChangeText={value => setVerificationCode(value.replace(/\D/g, '').slice(0, 6))}
+                keyboardType="number-pad"
+                maxLength={6}
+                textContentType="oneTimeCode"
+              />
+            </View>
+            <TouchableOpacity
+              style={[s.goldBtn, verificationAction && s.disabled]}
+              onPress={handleVerifyEmail}
+              disabled={!!verificationAction}
+            >
+              {verificationAction === 'verify'
                 ? <ActivityIndicator color={C.navy} size="small" />
-                : <Text style={s.goldBtnText}>Resend Email</Text>}
+                : <Text style={s.goldBtnText}>Verify Email</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.goldBtn, verificationAction && s.disabled]}
+              onPress={handleResend}
+              disabled={!!verificationAction}
+            >
+              {verificationAction === 'resend'
+                ? <ActivityIndicator color={C.navy} size="small" />
+                : <Text style={s.goldBtnText}>Resend Code</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={s.ghostBtn} onPress={() => { setVerificationEmail(''); setTab('login'); }}>
               <Text style={s.ghostBtnText}>← Back to Login</Text>
@@ -289,7 +503,7 @@ export default function AuthScreen() {
 
                 <TouchableOpacity
                   style={s.forgotWrap}
-                  onPress={() => Alert.alert('Reset Password', 'Open the Jih web app to reset your password, then log in here.')}
+                  onPress={openResetPassword}
                 >
                   <Text style={s.forgotText}>Forgot password?</Text>
                 </TouchableOpacity>
@@ -574,4 +788,11 @@ const s = StyleSheet.create({
   verifyTitle: { fontSize: 26, fontWeight: '800', color: C.white, marginBottom: 14, textAlign: 'center' },
   verifyBody: { fontSize: 15, color: C.white60, textAlign: 'center', lineHeight: 24, marginBottom: 28 },
   verifyHighlight: { fontWeight: '700', color: C.gold },
+  resetForm: { width: '100%', gap: 14 },
+  codeInputRow: { width: '100%', marginBottom: 14 },
+  codeInput: {
+    width: '100%', textAlign: 'center', color: C.white, fontSize: 28, fontWeight: '800',
+    letterSpacing: 8, backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder,
+    borderRadius: 14, paddingVertical: 14,
+  },
 });

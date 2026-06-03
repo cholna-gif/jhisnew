@@ -3,6 +3,18 @@ import { Profile, Ride } from '@/types';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 
+async function readResponseJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    const preview = text.replace(/\s+/g, ' ').slice(0, 120);
+    throw new Error(`Server returned non-JSON response from ${res.url}: ${preview}`);
+  }
+}
+
 async function getAuthHeader(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -22,10 +34,46 @@ async function request<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  const json = await res.json();
+  const json = await readResponseJson(res);
   if (!res.ok) throw new Error(json.error ?? `Request failed: ${res.status}`);
   return json as T;
 }
+
+async function publicRequest<T>(
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const json = await readResponseJson(res);
+  if (!res.ok) throw new Error(json.error ?? `Request failed: ${res.status}`);
+  return json as T;
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+export const AuthAPI = {
+  signUp: (full_name: string, email: string, password: string, phone?: string) =>
+    publicRequest<{ success: boolean; needsVerification: boolean }>('POST', '/api/auth/signup', {
+      full_name,
+      email,
+      password,
+      phone,
+    }),
+  verifyEmail: (email: string, code: string) =>
+    publicRequest<{ success: boolean }>('POST', '/api/auth/verify-email', { email, code }),
+  resendVerification: (email: string) =>
+    publicRequest<{ success: boolean }>('POST', '/api/auth/resend-verification', { email }),
+  requestPasswordReset: (email: string) =>
+    publicRequest<{ success: boolean }>('POST', '/api/auth/forgot-password', { email }),
+  resetPassword: (email: string, code: string, password: string) =>
+    publicRequest<{ success: boolean }>('POST', '/api/auth/reset-password', { email, code, password }),
+};
 
 // ── Profile ──────────────────────────────────────────────────────────────────
 
