@@ -28,12 +28,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (_userId: string) => {
+  const fetchProfile = async (user: import('@supabase/supabase-js').User) => {
     try {
       const data = await ProfileAPI.get();
       setProfile(data);
     } catch {
-      setProfile(null);
+      // First-time Google/OAuth sign-in — profile row doesn't exist yet, create it
+      try {
+        const fullName = String(
+          user.user_metadata?.full_name ?? user.user_metadata?.name ?? ''
+        );
+        const email = user.email ?? '';
+        if (email) {
+          await ProfileAPI.create(fullName || email.split('@')[0], email);
+          const data = await ProfileAPI.get();
+          setProfile(data);
+        }
+      } catch {
+        setProfile(null);
+      }
     }
   };
 
@@ -42,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
+      if (session?.user) fetchProfile(session.user);
       setLoading(false);
     });
 
@@ -50,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id);
+        fetchProfile(session.user);
       } else {
         setProfile(null);
       }
@@ -91,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshProfile = async () => {
-    if (user) await fetchProfile(user.id);
+    if (user) await fetchProfile(user);
   };
 
   return (
