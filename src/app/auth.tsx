@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, ComponentProps } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import { Feather } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { AuthAPI } from '@/lib/api';
@@ -263,7 +264,7 @@ export default function AuthScreen() {
                     autoCapitalize="none"
                     autoComplete="email"
                     returnKeyType="done"
-                    icon="✉"
+                    icon="mail"
                   />
                   <TouchableOpacity
                     style={[s.goldBtn, resetAction && s.disabled]}
@@ -406,12 +407,9 @@ export default function AuthScreen() {
 
             {/* ── Hero / Branding ── */}
             <View style={s.hero}>
-              <View style={s.logoRing}>
-                <View style={s.logoInner}>
-                  <Text style={s.logoEmoji}>🛺</Text>
-                </View>
+              <View style={s.logoSquare}>
+                <Text style={s.logoSquareText}>Jih</Text>
               </View>
-              <Text style={s.appName}>jih</Text>
               <Text style={s.tagline}>Cambodia's community ride</Text>
             </View>
 
@@ -479,7 +477,7 @@ export default function AuthScreen() {
                   autoCapitalize="none"
                   autoComplete="email"
                   returnKeyType="next"
-                  icon="✉"
+                  icon="mail"
                 />
                 <GlassPwField
                   placeholder="Password"
@@ -524,7 +522,7 @@ export default function AuthScreen() {
                   onChangeText={setFullName}
                   autoCapitalize="words"
                   returnKeyType="next"
-                  icon="👤"
+                  icon="user"
                 />
                 <GlassInput
                   placeholder="Email address"
@@ -534,7 +532,7 @@ export default function AuthScreen() {
                   autoCapitalize="none"
                   autoComplete="email"
                   returnKeyType="next"
-                  icon="✉"
+                  icon="mail"
                 />
 
                 {/* Phone */}
@@ -633,11 +631,11 @@ function GlassInput({
   autoCapitalize?: any;
   autoComplete?: any;
   returnKeyType?: any;
-  icon?: string;
+  icon?: ComponentProps<typeof Feather>['name'];
 }) {
   return (
     <View style={s.glassInputRow}>
-      {icon && <Text style={s.inputIcon}>{icon}</Text>}
+      {icon && <Feather name={icon} size={16} color={C.white35} style={s.inputIcon} />}
       <TextInput
         style={s.glassInput}
         placeholder={placeholder}
@@ -667,7 +665,7 @@ function GlassPwField({
 }) {
   return (
     <View style={s.glassInputRow}>
-      <Text style={s.inputIcon}>🔒</Text>
+      <Feather name="lock" size={16} color={C.white35} style={s.inputIcon} />
       <TextInput
         style={[s.glassInput, { flex: 1 }]}
         placeholder={placeholder}
@@ -680,7 +678,7 @@ function GlassPwField({
         onSubmitEditing={onSubmit}
       />
       <TouchableOpacity onPress={toggle} style={s.eyeBtn}>
-        <Text style={s.eyeIcon}>{show ? '🙈' : '👁️'}</Text>
+        <Feather name={show ? 'eye-off' : 'eye'} size={18} color={C.white35} />
       </TouchableOpacity>
     </View>
   );
@@ -694,10 +692,16 @@ const s = StyleSheet.create({
 
   // ── hero ──
   hero: { alignItems: 'center', marginBottom: 28, marginTop: 8 },
-  logoRing: { width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderColor: C.gold, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  logoInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.goldDim, alignItems: 'center', justifyContent: 'center' },
-  logoEmoji: { fontSize: 30 },
-  appName:  { fontSize: 38, fontWeight: '800', color: C.white, letterSpacing: 3, marginBottom: 4 },
+  logoSquare: {
+    width: 100, height: 100, borderRadius: 22,
+    backgroundColor: C.navy,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#7BB8D9',
+    shadowColor: '#7BB8D9', shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55, shadowRadius: 14, elevation: 8,
+    marginBottom: 16,
+  },
+  logoSquareText: { fontSize: 44, fontWeight: '900', color: C.white, letterSpacing: -1 },
   tagline:  { fontSize: 13, color: C.white60, letterSpacing: 0.5 },
 
   // ── social ──

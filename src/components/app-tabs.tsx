@@ -13,7 +13,7 @@ export default function AppTabs() {
       labelStyle={{ selected: { color: colors.text } }}
     >
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Icon sf={{ default: 'mappin.circle', selected: 'mappin.circle.fill' }} />
+        <NativeTabs.Trigger.Icon sf={{ default: 'location.circle', selected: 'location.circle.fill' }} />
         <NativeTabs.Trigger.Label>Book</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 

@@ -9,6 +9,7 @@ import {
   TextInput,
   Dimensions,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 const SCREEN_H = Dimensions.get('window').height;
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -261,14 +262,18 @@ export default function MyRideScreen() {
   if (!ride) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.bigIcon}>🛺</Text>
+        <View style={styles.jihLogo}>
+          <Text style={styles.jihLogoText}>Jih</Text>
+        </View>
         <Text style={styles.bigTitle}>No Active Ride</Text>
         <Text style={styles.subText}>Book a ride from the Book tab to get started.</Text>
         <TouchableOpacity style={styles.navyBtn} onPress={() => router.replace('/(tabs)')}>
           <Text style={styles.navyBtnText}>Book a Ride →</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.clearBtn, clearingStuck && { opacity: 0.5 }]} onPress={clearStuckRides} disabled={clearingStuck}>
-          {clearingStuck ? <ActivityIndicator color="#6b7280" size="small" /> : <Text style={styles.clearBtnText}>🔧 Clear stuck rides</Text>}
+          {clearingStuck
+            ? <ActivityIndicator color="#6b7280" size="small" />
+            : <><Feather name="tool" size={13} color="#6b7280" /><Text style={styles.clearBtnText}> Clear stuck rides</Text></>}
         </TouchableOpacity>
         <Text style={styles.clearHint}>Use if booking says you have an active ride but nothing shows here.</Text>
       </SafeAreaView>
@@ -581,6 +586,8 @@ function Chip({ color, bg, children }: { color: string; bg: string; children: st
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
+  jihLogo:      { width: 90, height: 90, borderRadius: 20, backgroundColor: '#0D1B36', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#7BB8D9', shadowColor: '#7BB8D9', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 12, elevation: 8, marginBottom: 16 },
+  jihLogoText:  { fontSize: 38, fontWeight: '900', color: '#ffffff', letterSpacing: -1 },
   bigIcon:      { fontSize: 56, marginBottom: 12 },
   cancelledIconBox: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#fef2f2', borderWidth: 2, borderColor: '#fecaca', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   bigTitle:     { fontSize: 20, fontWeight: '700', color: '#111', textAlign: 'center', marginBottom: 8 },
