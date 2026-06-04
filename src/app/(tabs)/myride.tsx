@@ -259,6 +259,42 @@ export default function MyRideScreen() {
     );
   }
 
+  // ── No Drivers Available ─────────────────────────────────────────────────
+  if (ride?.status === 'no_drivers') {
+    return (
+      <SafeAreaView style={styles.center}>
+        <View style={[styles.jihLogo, { borderColor: '#ef4444', shadowColor: '#ef4444' }]}>
+          <Feather name="map-pin" size={36} color="#ef4444" />
+        </View>
+        <Text style={styles.bigTitle}>No Drivers Nearby</Text>
+        <Text style={styles.subText}>
+          No drivers are available within range right now.{'\n'}Try again in a few minutes.
+        </Text>
+        <TouchableOpacity
+          style={styles.navyBtn}
+          onPress={async () => {
+            try {
+              const newRide = await RidesAPI.retry(ride.id);
+              setRide(newRide);
+              activeRideIdRef.current = newRide.id;
+            } catch { /* ignore */ }
+          }}
+        >
+          <Text style={styles.navyBtnText}>Try Again →</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.outlineBtn, { marginTop: 8 }]}
+          onPress={async () => {
+            await RidesAPI.cancel(ride.id, 'No drivers found');
+            setRide(null);
+          }}
+        >
+          <Text style={styles.outlineBtnText}>Cancel</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
   if (!ride) {
     return (
       <SafeAreaView style={styles.center}>

@@ -14,7 +14,8 @@ export type RideStatus =
   | 'in_progress'
   | 'completed'
   | 'cancelled'
-  | 'scheduled';
+  | 'scheduled'
+  | 'no_drivers';
 
 export interface Ride {
   id: string;
