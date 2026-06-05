@@ -326,7 +326,7 @@ export default function BookScreen() {
     // ── Success ──────────────────────────────────────────────────────────────
     if (confirmState === 'success') {
       return (
-        <SafeAreaView style={[styles.screen, { backgroundColor: '#1A2744' }]}>
+        <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: '#1A2744' }]}>
           <View style={styles.resultWrap}>
             <View style={styles.resultIconBox}>
               <Text style={styles.resultEmoji}>🛺</Text>
@@ -360,7 +360,7 @@ export default function BookScreen() {
     // ── Error ─────────────────────────────────────────────────────────────────
     if (confirmState === 'error') {
       return (
-        <SafeAreaView style={[styles.screen, { backgroundColor: '#1A2744' }]}>
+        <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: '#1A2744' }]}>
           <View style={styles.confirmHeader}>
             <TouchableOpacity onPress={() => { setShowConfirm(false); setConfirmState('idle'); }}>
               <Text style={styles.backBtn}>← Back</Text>
@@ -396,7 +396,7 @@ export default function BookScreen() {
     // ── Idle / Loading ────────────────────────────────────────────────────────
     const isWorking = confirmState === 'checking' || confirmState === 'submitting';
     return (
-      <SafeAreaView style={[styles.screen, { backgroundColor: '#1A2744' }]}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: '#1A2744' }]}>
         {/* Header */}
         <View style={styles.confirmHeader}>
           <TouchableOpacity onPress={() => setShowConfirm(false)} disabled={isWorking}>
@@ -487,7 +487,7 @@ export default function BookScreen() {
   // ══════════════════════════════════════════════════════════════════════════
   if (bookingMode === 'full_day') {
     return (
-      <SafeAreaView style={[styles.screen, { backgroundColor: '#1A2744' }]}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: '#1A2744' }]}>
         <ModeBar />
         <FullDayHireTab onRideCreated={handleRideCreated} />
       </SafeAreaView>
@@ -495,7 +495,7 @@ export default function BookScreen() {
   }
   if (bookingMode === 'scheduled') {
     return (
-      <SafeAreaView style={[styles.screen, { backgroundColor: '#1A2744' }]}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: '#1A2744' }]}>
         <ModeBar />
         <ScheduledRideTab onRideCreated={handleRideCreated} />
       </SafeAreaView>
@@ -503,7 +503,7 @@ export default function BookScreen() {
   }
   if (bookingMode === 'favorite') {
     return (
-      <SafeAreaView style={[styles.screen, { backgroundColor: '#1A2744' }]}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: '#1A2744' }]}>
         <ModeBar />
         <View style={styles.comingSoon}>
           <View style={styles.comingSoonIcon}>
@@ -518,7 +518,7 @@ export default function BookScreen() {
 
   // ── Standard booking ──────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={[styles.screen, { backgroundColor: '#1A2744' }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: '#1A2744' }]}>
       {isSuspended && (
         <View style={styles.suspendedBanner}>
           <Text style={styles.suspendedText}>⚠️ Account suspended — contact Jih support.</Text>
